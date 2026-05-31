@@ -84,5 +84,22 @@ export function extractOrderInfo(order) {
   const currency = order.currency ? ` ${order.currency}` : '';
   const total = `${order.total != null ? order.total : ''}${currency}`.trim();
 
-  return { phone, name: String(name).split(' ')[0], orderNumber, total };
+  // Build a one-line summary of each product: "Name (Option: Value) ×Qty".
+  // No per-item price — the order total is shown separately in the message.
+  // WhatsApp template variables can't contain line breaks, so keep it on one line.
+  const items = Array.isArray(order.items) ? order.items : [];
+  const products =
+    items
+      .map((it) => {
+        const opts = Array.isArray(it.selectedOptions) ? it.selectedOptions : [];
+        let optText = '';
+        if (opts.length) {
+          optText = ' (' + opts.map((o) => `${o.name}: ${o.value}`).join(', ') + ')';
+        }
+        const qty = ` ×${it.quantity || 1}`;
+        return `${it.name}${optText}${qty}`;
+      })
+      .join(' | ') || '-';
+
+  return { phone, name: String(name).split(' ')[0], orderNumber, total, products };
 }
