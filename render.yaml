@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: ecwid-whatsapp
+    runtime: node
+    plan: starter            # always-on; required for the poller to run continuously
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /
+    disk:
+      name: data
+      mountPath: /var/data   # persists the "already messaged" record across restarts
+      sizeGB: 1
+    envVars:
+      # Pre-set (safe, non-secret) values:
+      - key: STORE_FILE
+        value: /var/data/orders.json
+      - key: POLL_INTERVAL_SECONDS
+        value: "60"
+      - key: DEFAULT_COUNTRY_CODE
+        value: "20"
+      - key: CONFIRM_FULFILLMENT_STATUS
+        value: PROCESSING
+      - key: CANCEL_PAYMENT_STATUS
+        value: CANCELLED
+      - key: WHATSAPP_TEMPLATE_LANG
+        value: en
+      - key: GRAPH_VERSION
+        value: v21.0
+      # Secrets — Render will prompt you to enter these on deploy:
+      - key: ECWID_STORE_ID
+        sync: false
+      - key: ECWID_API_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_TEMPLATE_NAME
+        sync: false
+      - key: MERCHANT_WHATSAPP
+        sync: false
