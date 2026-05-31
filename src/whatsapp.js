@@ -29,9 +29,11 @@ async function send(payload) {
   return data;
 }
 
-// Sends the Confirm/Cancel poll. Body has 3 variables: {{1}} name, {{2}} order #, {{3}} total.
+// Sends the Confirm/Cancel poll. Body has 2 variables: {{1}} products, {{2}} total.
 // Button 0 = Confirm, Button 1 = Cancel. Payloads carry the order ID back to us.
-export async function sendPollTemplate(to, { name, orderNumber, total, orderId }) {
+export async function sendPollTemplate(to, { products, total, orderId }) {
+  // WhatsApp rejects parameters with line breaks/tabs/long spaces, so collapse them.
+  const clean = (s) => String(s ?? '').replace(/\s+/g, ' ').trim() || '-';
   return send({
     messaging_product: 'whatsapp',
     to,
@@ -43,9 +45,8 @@ export async function sendPollTemplate(to, { name, orderNumber, total, orderId }
         {
           type: 'body',
           parameters: [
-            { type: 'text', text: String(name) },
-            { type: 'text', text: String(orderNumber) },
-            { type: 'text', text: String(total) },
+            { type: 'text', text: clean(products) },
+            { type: 'text', text: clean(total) },
           ],
         },
         {
