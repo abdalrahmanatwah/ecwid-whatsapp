@@ -84,22 +84,25 @@ export function extractOrderInfo(order) {
   const currency = order.currency ? ` ${order.currency}` : '';
   const total = `${order.total != null ? order.total : ''}${currency}`.trim();
 
-  // Build a one-line summary of each product: "Name (Option: Value) ×Qty".
-  // No per-item price — the order total is shown separately in the message.
-  // WhatsApp template variables can't contain line breaks, so keep it on one line.
+  // Build a scannable product list. WhatsApp forbids newlines inside template
+  // variables, so each item is prefixed with a bullet on one wrapping line.
   const items = Array.isArray(order.items) ? order.items : [];
-  const products =
-    items
-      .map((it) => {
-        const opts = Array.isArray(it.selectedOptions) ? it.selectedOptions : [];
-        let optText = '';
-        if (opts.length) {
-          optText = ' (' + opts.map((o) => `${o.name}: ${o.value}`).join(', ') + ')';
-        }
-        const qty = ` ×${it.quantity || 1}`;
-        return `${it.name}${optText}${qty}`;
-      })
-      .join(' | ') || '-';
+  const lines = items.map((it) => {
+    const opts = Array.isArray(it.selectedOptions) ? it.selectedOptions : [];
+    const optText = opts.length
+      ? ' (' + opts.map((o) => `${o.name}: ${o.value}`).join(', ') + ')'
+      : '';
+    const qty = ` ×${it.quantity || 1}`;
+    return `• ${it.name}${optText}${qty}`;
+  });
+  let products = lines.join('  ') || '-';
+
+  // Safety: keep well within WhatsApp's body length limit. If an order is huge,
+  // list as much as fits and note the rest (the total still covers everything).
+  const MAX = 900;
+  if (products.length > MAX) {
+    products = products.slice(0, MAX).replace(/\s+\S*$/, '') + ' …وأصناف أخرى';
+  }
 
   return { phone, name: String(name).split(' ')[0], orderNumber, total, products };
 }
