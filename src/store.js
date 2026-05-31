@@ -37,6 +37,13 @@ export const store = {
   has(orderId) {
     return Boolean(load()[orderId]);
   },
+  // All order records (excludes the internal __meta__ bag).
+  list() {
+    const data = load();
+    return Object.keys(data)
+      .filter((k) => k !== '__meta__')
+      .map((k) => data[k]);
+  },
   // Small bag for non-order state (e.g. the last time we polled).
   getMeta(key) {
     return (load().__meta__ || {})[key] ?? null;
