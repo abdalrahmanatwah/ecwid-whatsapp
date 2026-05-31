@@ -84,7 +84,12 @@ async function handleReply({ action, orderId, from }) {
   if (action === 'confirm') {
     await updateOrder(orderId, { fulfillmentStatus: CONFIRM_STATUS });
     store.upsert(orderId, { status: 'confirmed', repliedBy: from });
-    await sendText(from, '✅ Thank you! Your order is confirmed and we are preparing it now.');
+    await sendText(
+      from,
+      '🎉 تّمام يا صاحبي، تم تأكيد الأوردر بنجاح. ✅\n' +
+        'وجاري تجهيزه دلوقتي علشان يجيلك طاير. 🚀 أول ما الشحنة تطلع مع شركة الشحن هتابع معاك علطول. 🚛💨\n' +
+        'لو عوزت أي حاجة تانية أنا في الخدمة دايماً! 🫡✨'
+    );
     await notifyMerchant(`✅ Order ${orderId} was CONFIRMED by the customer.`);
     console.log(`[reply] order ${orderId} confirmed`);
   } else if (action === 'cancel') {
