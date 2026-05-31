@@ -33,7 +33,7 @@ async function pollOnce() {
     try {
       // The search result already has most fields, but fetch the full order to be safe.
       const order = await getOrder(orderId);
-      const { phone, name, orderNumber, total } = extractOrderInfo(order);
+      const { phone, name, orderNumber, total, products } = extractOrderInfo(order);
 
       const to = normalizePhone(phone, COUNTRY);
       if (!to) {
@@ -42,7 +42,7 @@ async function pollOnce() {
         continue;
       }
 
-      await sendPollTemplate(to, { name, orderNumber, total, orderId });
+      await sendPollTemplate(to, { products, total, orderId });
       store.upsert(orderId, { status: 'poll_sent', to, orderNumber });
       console.log(`[poll] poll sent for order ${orderId} to ${to}`);
     } catch (err) {
