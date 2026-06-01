@@ -7,8 +7,10 @@ import { searchOrders, getOrder, extractOrderInfo } from './ecwid.js';
 import { sendPollTemplate } from './whatsapp.js';
 import { normalizePhone } from './phone.js';
 import { store } from './store.js';
+import { shipOrderViaBosta } from './shipping.js';
 
 const COUNTRY = process.env.DEFAULT_COUNTRY_CODE || '20';
+const SHIP_DELAY_MS = Number(process.env.SHIP_DELAY_MINUTES || 60) * 60_000;
 const OVERLAP_SEC = 120;            // re-scan a little into the past when discovering new orders
 const MAX_RETRY_HOURS = Number(process.env.MAX_RETRY_HOURS || 24); // stop retrying a stuck order after this
 
@@ -82,6 +84,16 @@ async function pollOnce() {
       continue;
     }
     await attemptSend(rec.orderId, rec, true);
+  }
+
+  // 3) Ship confirmed single-product orders once the grace period has passed.
+  //    Orders cancelled during the window are no longer 'confirmed', so skipped.
+  for (const rec of store.list()) {
+    if (rec.status !== 'confirmed' || !rec.confirmedAt) continue;
+    const age = Date.now() - new Date(rec.confirmedAt).getTime();
+    if (age >= SHIP_DELAY_MS) {
+      await shipOrderViaBosta(rec.orderId);
+    }
   }
 }
 
