@@ -11,6 +11,8 @@ import { translateAddressToArabic } from './translate.js';
 const BASE = process.env.BOSTA_BASE_URL || 'https://app.bosta.co/api/v2';
 const API_KEY = process.env.BOSTA_API_KEY || '';
 const DELIVERY_TYPE_SEND = Number(process.env.BOSTA_DELIVERY_TYPE || 10); // 10 = Deliver/Send
+// Dry run: build + log the shipment but DON'T create it (safe testing).
+const DRY_RUN = String(process.env.BOSTA_DRY_RUN || '').toLowerCase() === 'true';
 
 export function bostaConfigured() {
   return Boolean(API_KEY);
@@ -120,6 +122,14 @@ export async function createDeliveryFromOrder(order) {
     // translation is imperfect — the courier still has the source text.
     notes: addr.street && arabicStreet !== addr.street ? `Original: ${addr.street}` : '',
   };
+
+  if (DRY_RUN) {
+    console.log(
+      `[bosta] DRY RUN — order ${payload.businessReference}: would create this delivery (NOT sent):\n` +
+        JSON.stringify(payload, null, 2)
+    );
+    return { trackingNumber: null, deliveryId: null, dryRun: true, payload };
+  }
 
   const res = await fetch(`${BASE}/deliveries`, {
     method: 'POST',
