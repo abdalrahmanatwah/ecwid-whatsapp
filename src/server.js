@@ -4,6 +4,7 @@ import { updateOrder } from './ecwid.js';
 import { sendText } from './whatsapp.js';
 import { store } from './store.js';
 import { startPolling } from './poller.js';
+import { notifyMerchant } from './notify.js';
 
 const app = express();
 app.use(express.json());
@@ -11,7 +12,17 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const CONFIRM_STATUS = process.env.CONFIRM_FULFILLMENT_STATUS || 'PROCESSING';
 const CANCEL_STATUS = process.env.CANCEL_PAYMENT_STATUS || 'CANCELLED';
-const MERCHANT = process.env.MERCHANT_WHATSAPP || '';
+const SHIP_DELAY_MIN = Number(process.env.SHIP_DELAY_MINUTES || 60);
+
+const CONFIRM_MESSAGE =
+  '🎉 تّمام يا صاحبي، تم تأكيد الأوردر بنجاح. ✅\n' +
+  'وجاري تجهيزه دلوقتي علشان يجيلك طاير. 🚀 أول ما الشحنة تطلع مع شركة الشحن هتابع معاك علطول. 🚛💨\n' +
+  'لو عوزت أي حاجة تانية أنا في الخدمة دايماً! 🫡✨';
+
+const CANCEL_MESSAGE =
+'يا خسارة يا صاحبي، تم إلغاء الأوردر بناءً على طلبك. 😔❌\n' +
+'لو في أي مشكلة حصلت أو حابب تشاركنا إيه السبب، ياريت تقولنا علشان نصلحها علطول! 🤝💬\n' +
+'ولو الإلغاء ده حصل بالخطأ، تقدر تعمل الأوردر تاني أو ترد على الرسالة دي وهنساعدك فوراً. 📲✨';
 
 // Health check
 app.get('/', (_req, res) => res.send('Ecwid → WhatsApp order confirmation: running'));
@@ -73,40 +84,50 @@ function parsePayload(payload) {
 }
 
 async function handleReply({ action, orderId, from }) {
-  const record = store.get(orderId);
+  const status = store.get(orderId)?.status;
 
-  // Guard against double taps / replays.
-  if (record?.status === 'confirmed' || record?.status === 'cancelled') {
-    console.log(`[reply] order ${orderId} already ${record.status}, ignoring`);
+  if (action === 'confirm') {
+    // Confirm only acts on a fresh (un-acted) order. If it's already confirmed,
+    // shipped, or cancelled, do nothing — avoids re-shipping or un-cancelling.
+    if (status && status !== 'poll_sent') {
+      console.log(`[reply] order ${orderId} is '${status}', ignoring confirm`);
+      return;
+    }
+    await updateOrder(orderId, { fulfillmentStatus: CONFIRM_STATUS });
+    // Record confirmedAt — the poller ships single-product orders SHIP_DELAY_MIN later,
+    // giving the customer a window to cancel after confirming.
+    store.upsert(orderId, { status: 'confirmed', confirmedAt: new Date().toISOString(), repliedBy: from });
+    await sendText(from, CONFIRM_MESSAGE);
+    await notifyMerchant(`✅ Order ${orderId} CONFIRMED (ships via Bosta in ${SHIP_DELAY_MIN} min unless cancelled).`);
+    console.log(`[reply] order ${orderId} confirmed — will ship in ${SHIP_DELAY_MIN} min unless cancelled`);
     return;
   }
 
-  if (action === 'confirm') {
-    await updateOrder(orderId, { fulfillmentStatus: CONFIRM_STATUS });
-    store.upsert(orderId, { status: 'confirmed', repliedBy: from });
-    await sendText(
-      from,
-      '🎉 تّمام يا صاحبي، تم تأكيد الأوردر بنجاح. ✅\n' +
-        'وجاري تجهيزه دلوقتي علشان يجيلك طاير. 🚀 أول ما الشحنة تطلع مع شركة الشحن هتابع معاك علطول. 🚛💨\n' +
-        'لو عوزت أي حاجة تانية أنا في الخدمة دايماً! 🫡✨'
-    );
-    await notifyMerchant(`✅ Order ${orderId} was CONFIRMED by the customer.`);
-    console.log(`[reply] order ${orderId} confirmed`);
-  } else if (action === 'cancel') {
+  if (action === 'cancel') {
+    if (status === 'cancelled' || status === 'cancelled_after_ship') {
+      console.log(`[reply] order ${orderId} already cancelled, ignoring`);
+      return;
+    }
+
+    // Already shipped via Bosta — too late to auto-cancel the shipment.
+    if (status === 'shipped') {
+      await updateOrder(orderId, { paymentStatus: CANCEL_STATUS });
+      store.upsert(orderId, { status: 'cancelled_after_ship', repliedBy: from });
+      await sendText(from, CANCEL_MESSAGE);
+      await notifyMerchant(`⚠️ Order ${orderId} was ALREADY SHIPPED via Bosta but the customer just cancelled — cancel the Bosta shipment manually.`);
+      console.log(`[reply] order ${orderId} cancelled AFTER shipping — merchant alerted`);
+      return;
+    }
+
+    // Not yet shipped (poll_sent / confirmed / ship_failed / ship_skipped_multi /
+    // none): cancel cleanly. If it was 'confirmed', this stops the pending Bosta ship,
+    // because the poller and shipper only act on orders still in 'confirmed' state.
     await updateOrder(orderId, { paymentStatus: CANCEL_STATUS });
     store.upsert(orderId, { status: 'cancelled', repliedBy: from });
-    await sendText(from, 'Your order has been cancelled. If this was a mistake, just place it again or reply here.');
-    await notifyMerchant(`❌ Order ${orderId} was CANCELLED by the customer.`);
-    console.log(`[reply] order ${orderId} cancelled`);
-  }
-}
-
-async function notifyMerchant(text) {
-  if (!MERCHANT) return;
-  try {
-    await sendText(MERCHANT, text);
-  } catch (err) {
-    console.warn('[merchant] notify skipped:', err.message);
+    await sendText(from, CANCEL_MESSAGE);
+    await notifyMerchant(`❌ Order ${orderId} was CANCELLED by the customer${status === 'confirmed' ? ' (after confirming — shipment stopped)' : ''}.`);
+    console.log(`[reply] order ${orderId} cancelled${status === 'confirmed' ? ' (was confirmed; shipment stopped)' : ''}`);
+    return;
   }
 }
 
