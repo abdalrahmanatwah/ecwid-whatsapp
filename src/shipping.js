@@ -39,7 +39,16 @@ export async function shipOrderViaBosta(orderId) {
       return;
     }
 
-    const { trackingNumber, deliveryId } = await createDeliveryFromOrder(order);
+    const { trackingNumber, deliveryId, dryRun } = await createDeliveryFromOrder(order);
+
+    // Dry run: we built and logged the payload but created no real shipment.
+    // Don't mark Ecwid shipped — just record it so we don't loop, and alert.
+    if (dryRun) {
+      store.upsert(orderId, { status: 'dry_run' });
+      await notifyMerchant(`🧪 DRY RUN: order ${orderId} would ship via Bosta (no real shipment created). Check the logs to verify the address/COD.`);
+      console.log(`[bosta] DRY RUN complete for order ${orderId} — no shipment created`);
+      return;
+    }
 
     await updateOrder(orderId, {
       fulfillmentStatus: SHIPPED_STATUS,
