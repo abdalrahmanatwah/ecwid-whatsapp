@@ -32,8 +32,11 @@ function normalize(s) {
   return String(s || '')
     .trim()
     .toLowerCase()
-    .replace(/\u064b-\u065f/g, '') // strip Arabic diacritics
-    .replace(/[إأآا]/g, 'ا')
+    .replace(/[\u064B-\u065F\u0670]/g, '') // strip Arabic diacritics (proper char class)
+    .replace(/[إأآا]/g, 'ا')               // unify alef forms
+    .replace(/ى/g, 'ي')                    // alef maqsura -> ya
+    .replace(/ة/g, 'ه')                    // ta marbuta -> ha
+    .replace(/\u0640/g, '')                // strip tatweel
     .replace(/\s+/g, ' ');
 }
 
@@ -59,13 +62,21 @@ async function loadCities() {
   return map;
 }
 
-export async function resolveCityId(cityName) {
+// Try several candidate names (e.g. area, then governorate) and return the
+// first that matches a Bosta city. On total failure, logs the available Bosta
+// city names so the mismatch is easy to diagnose.
+export async function resolveCityId(candidates) {
   const map = await loadCities();
-  const id = map.get(normalize(cityName));
-  if (!id) {
-    throw new Error(`Bosta has no city matching "${cityName}" (check the Ecwid dropdown values vs Bosta's city names)`);
+  const tried = [];
+  for (const name of candidates) {
+    if (!name) continue;
+    tried.push(name);
+    const id = map.get(normalize(name));
+    if (id) return id;
   }
-  return id;
+  const available = [...new Set([...map.keys()])].sort().join(', ');
+  console.error(`[bosta] no city match for [${tried.join(' | ')}]. Bosta cities available: ${available}`);
+  throw new Error(`Bosta has no city matching [${tried.join(' | ')}] — see logs for Bosta's city list, then adjust`);
 }
 
 // --- Create delivery from an Ecwid order -----------------------------------
@@ -75,7 +86,8 @@ function pickAddress(order) {
     name: p.name || order.customerName || 'Customer',
     phone: p.phone || order.phone || '',
     street: p.street || p.address || '',
-    city: p.city || '',
+    city: p.city || '',                                   // often the AREA (e.g. حلوان)
+    state: p.stateOrProvinceName || p.stateOrProvinceCode || '', // governorate (e.g. Cairo)
     postalCode: p.postalCode || '',
   };
 }
@@ -95,10 +107,16 @@ export async function createDeliveryFromOrder(order) {
 
   const addr = pickAddress(order);
   if (!addr.phone) throw new Error('order has no phone for Bosta receiver');
-  if (!addr.city) throw new Error('order has no city for Bosta');
+  if (!addr.city && !addr.state) throw new Error('order has no city/governorate for Bosta');
 
-  const cityId = await resolveCityId(addr.city);
-  const arabicStreet = await translateAddressToArabic(addr.street);
+  // Bosta cities are governorate-level (Cairo, Giza, …). Try the area first
+  // (in case Bosta lists it), then fall back to the governorate.
+  const cityId = await resolveCityId([addr.city, addr.state]);
+
+  // Keep the area in the address line so the courier sees it even when the
+  // Bosta "city" resolved to the governorate. Then translate the whole line.
+  const fullStreet = [addr.city, addr.street].filter(Boolean).join('، ');
+  const arabicStreet = await translateAddressToArabic(fullStreet);
   const { firstName, lastName } = splitName(addr.name);
 
   const item = (order.items || [])[0] || {};
@@ -120,7 +138,7 @@ export async function createDeliveryFromOrder(order) {
     businessReference: String(order.orderNumber || order.id || ''),
     // Preserve the original (untranslated) address so nothing is lost if the
     // translation is imperfect — the courier still has the source text.
-    notes: addr.street && arabicStreet !== addr.street ? `Original: ${addr.street}` : '',
+    notes: fullStreet && arabicStreet !== fullStreet ? `Original: ${fullStreet}` : '',
   };
 
   if (DRY_RUN) {
