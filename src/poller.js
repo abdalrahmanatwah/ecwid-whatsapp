@@ -9,6 +9,7 @@ import { normalizePhone } from './phone.js';
 import { store } from './store.js';
 import { shipOrderViaBosta } from './shipping.js';
 import { checkDeliveryStatuses } from './followups.js';
+import { watchBostaDeliveries } from './bosta_watch.js';
 
 const COUNTRY = process.env.DEFAULT_COUNTRY_CODE || '20';
 const SHIP_DELAY_MS = Number(process.env.SHIP_DELAY_MINUTES || 60) * 60_000;
@@ -100,6 +101,11 @@ async function pollOnce() {
   // 4) Check Bosta delivery status of shipped orders and send the post-delivery
   //    follow-up messages (delivered offer / return reason). Self-throttled.
   await checkDeliveryStatuses();
+
+  // 5) Watch-only mode: for merchants shipping manually (AUTO_SHIP off), poll
+  //    Bosta deliveries and send the same follow-ups. Self-throttled; no-op
+  //    unless BOSTA_WATCH=true.
+  await watchBostaDeliveries();
 }
 
 export function startPolling(intervalSec) {
