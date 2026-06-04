@@ -165,7 +165,24 @@ export async function createDeliveryFromOrder(order) {
   return { trackingNumber, deliveryId, raw: d };
 }
 
-// Reads a delivery's current state from Bosta. Returns { code, value } where
+// Lists recent deliveries (most recent first). Used by the "watch" mode to
+// detect status changes on shipments you created manually in Bosta, without
+// the system creating them. Returns an array of raw delivery objects.
+export async function listRecentDeliveries(limit = 50) {
+  if (!API_KEY) return [];
+  const res = await fetch(`${BASE}/deliveries?limit=${limit}&pageNumber=0&sortBy=-updatedAt`, {
+    headers: authHeaders(),
+  });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`Bosta listDeliveries failed: ${res.status} ${t}`);
+  }
+  const data = await res.json();
+  const d = data?.data || data;
+  // Tolerate the common shapes Bosta might return.
+  const list = d?.deliveries || d?.list || d?.docs || (Array.isArray(d) ? d : []) || [];
+  return Array.isArray(list) ? list : [];
+}
 // value is Bosta's human-readable state (e.g. "Delivered", "Returned to business").
 // Used to trigger the post-delivery follow-up messages.
 export async function getDeliveryState(deliveryId) {
