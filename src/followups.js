@@ -41,7 +41,7 @@ export async function checkDeliveryStatuses() {
   if (!DELIVERED_TEMPLATE && !REJECTED_TEMPLATE) return; // feature not configured
 
   for (const rec of store.list()) {
-    if (rec.status !== 'shipped' || !rec.bostaId) continue;
+    if (rec.status !== 'shipped' || !rec.bostaTracking) continue;
 
     // Stop following up after MAX_DAYS to avoid polling forever.
     const shippedAge = rec.shippedAt ? (Date.now() - new Date(rec.shippedAt).getTime()) / 86_400_000 : 0;
@@ -55,7 +55,7 @@ export async function checkDeliveryStatuses() {
     if (since < CHECK_EVERY_MS) continue;
 
     try {
-      const st = await getDeliveryState(rec.bostaId);
+      const st = await getDeliveryState(rec.bostaTracking);
       store.upsert(rec.orderId, { lastStatusCheck: new Date().toISOString(), lastState: st?.value, lastStateCode: st?.code });
       if (!st) continue;
       console.log(`[followup] order ${rec.orderId} Bosta state: "${st.value}" (code ${st.code})`);
