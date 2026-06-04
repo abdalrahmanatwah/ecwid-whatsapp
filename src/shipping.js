@@ -18,6 +18,7 @@ import { notifyMerchant } from './notify.js';
 const SHIPPED_STATUS = process.env.SHIPPED_FULFILLMENT_STATUS || 'SHIPPED';
 
 export async function shipOrderViaBosta(orderId) {
+  if (String(process.env.AUTO_SHIP ?? 'true').toLowerCase() === 'false') return; // auto-ship disabled
   if (!bostaConfigured()) return;
 
   // Re-read state at ship time — the customer may have cancelled during the grace period.
@@ -54,7 +55,7 @@ export async function shipOrderViaBosta(orderId) {
       fulfillmentStatus: SHIPPED_STATUS,
       trackingNumber: trackingNumber || undefined,
     });
-    store.upsert(orderId, { status: 'shipped', bostaTracking: trackingNumber, bostaId: deliveryId });
+    store.upsert(orderId, { status: 'shipped', bostaTracking: trackingNumber, bostaId: deliveryId, shippedAt: new Date().toISOString() });
     await notifyMerchant(`🚚 Order ${orderId} shipped via Bosta. Tracking: ${trackingNumber || deliveryId || 'created'}`);
     console.log(`[bosta] order ${orderId} shipped, tracking ${trackingNumber}`);
   } catch (err) {
