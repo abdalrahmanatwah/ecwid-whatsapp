@@ -9,6 +9,9 @@
 import { translateAddressToArabic } from './translate.js';
 
 const BASE = process.env.BOSTA_BASE_URL || 'https://app.bosta.co/api/v2';
+// Reading/listing deliveries lives under /api/v1 (creating works on the
+// configured BASE). Derive the v1 base from whatever host BASE points at.
+const READ_BASE = BASE.replace(/\/api\/v\d+.*$/i, '') + '/api/v1';
 const API_KEY = process.env.BOSTA_API_KEY || '';
 const DELIVERY_TYPE_SEND = Number(process.env.BOSTA_DELIVERY_TYPE || 10); // 10 = Deliver/Send
 // Dry run: build + log the shipment but DON'T create it (safe testing).
@@ -170,7 +173,7 @@ export async function createDeliveryFromOrder(order) {
 // the system creating them. Returns an array of raw delivery objects.
 export async function listRecentDeliveries(limit = 50) {
   if (!API_KEY) return [];
-  const res = await fetch(`${BASE}/deliveries?limit=${limit}&pageNumber=0&sortBy=-updatedAt`, {
+  const res = await fetch(`${READ_BASE}/deliveries?pageNumber=0&pageLimit=${limit}`, {
     headers: authHeaders(),
   });
   if (!res.ok) {
@@ -185,12 +188,12 @@ export async function listRecentDeliveries(limit = 50) {
 }
 // value is Bosta's human-readable state (e.g. "Delivered", "Returned to business").
 // Used to trigger the post-delivery follow-up messages.
-export async function getDeliveryState(deliveryId) {
-  if (!API_KEY || !deliveryId) return null;
-  const res = await fetch(`${BASE}/deliveries/${deliveryId}`, { headers: authHeaders() });
+export async function getDeliveryState(trackingNumber) {
+  if (!API_KEY || !trackingNumber) return null;
+  const res = await fetch(`${READ_BASE}/deliveries/${encodeURIComponent(trackingNumber)}`, { headers: authHeaders() });
   if (!res.ok) {
     const t = await res.text().catch(() => '');
-    throw new Error(`Bosta getDelivery failed: ${res.status} ${t}`);
+    throw new Error(`Bosta getDelivery failed: ${res.status} ${t.slice(0, 120)}`);
   }
   const data = await res.json();
   const d = data?.data || data;
