@@ -74,3 +74,23 @@ export async function sendText(to, body) {
     text: { preview_url: false, body },
   });
 }
+
+// Sends any approved template by name, with optional body {{1}},{{2}}… params.
+// Used for follow-ups (delivered offer, return reason) that go out days later —
+// outside the 24h window — where only templates are allowed.
+export async function sendTemplate(to, name, lang, bodyParams = []) {
+  const clean = (s) => String(s ?? '').replace(/\s+/g, ' ').trim() || '-';
+  const components = [];
+  if (bodyParams.length) {
+    components.push({
+      type: 'body',
+      parameters: bodyParams.map((t) => ({ type: 'text', text: clean(t) })),
+    });
+  }
+  return send({
+    messaging_product: 'whatsapp',
+    to,
+    type: 'template',
+    template: { name, language: { code: lang }, components },
+  });
+}

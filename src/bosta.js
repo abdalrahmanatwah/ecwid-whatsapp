@@ -164,3 +164,22 @@ export async function createDeliveryFromOrder(order) {
   const deliveryId = d._id || d.id || null;
   return { trackingNumber, deliveryId, raw: d };
 }
+
+// Reads a delivery's current state from Bosta. Returns { code, value } where
+// value is Bosta's human-readable state (e.g. "Delivered", "Returned to business").
+// Used to trigger the post-delivery follow-up messages.
+export async function getDeliveryState(deliveryId) {
+  if (!API_KEY || !deliveryId) return null;
+  const res = await fetch(`${BASE}/deliveries/${deliveryId}`, { headers: authHeaders() });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`Bosta getDelivery failed: ${res.status} ${t}`);
+  }
+  const data = await res.json();
+  const d = data?.data || data;
+  const state = d?.state || {};
+  return {
+    code: state.code ?? state.stateCode ?? null,
+    value: state.value || state.state || d?.maskedState || '',
+  };
+}
