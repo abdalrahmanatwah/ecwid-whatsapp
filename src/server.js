@@ -13,6 +13,9 @@ const PORT = process.env.PORT || 3000;
 const CONFIRM_STATUS = process.env.CONFIRM_FULFILLMENT_STATUS || 'PROCESSING';
 const CANCEL_STATUS = process.env.CANCEL_PAYMENT_STATUS || 'CANCELLED';
 const SHIP_DELAY_MIN = Number(process.env.SHIP_DELAY_MINUTES || 60);
+// Master switch for Bosta auto-shipping. Defaults to true. Set AUTO_SHIP=false
+// to leave confirmed orders in Processing and never create a shipment.
+const AUTO_SHIP = String(process.env.AUTO_SHIP ?? 'true').toLowerCase() !== 'false';
 
 const CONFIRM_MESSAGE =
   '🎉 تّمام يا صاحبي، تم تأكيد الأوردر بنجاح. ✅\n' +
@@ -20,9 +23,7 @@ const CONFIRM_MESSAGE =
   'لو عوزت أي حاجة تانية أنا في الخدمة دايماً! 🫡✨';
 
 const CANCEL_MESSAGE =
-'يا خسارة يا صاحبي، تم إلغاء الأوردر بناءً على طلبك. 😔❌\n' +
-'لو في أي مشكلة حصلت أو حابب تشاركنا إيه السبب، ياريت تقولنا علشان نصلحها علطول! 🤝💬\n' +
-'ولو الإلغاء ده حصل بالخطأ، تقدر تعمل الأوردر تاني أو ترد على الرسالة دي وهنساعدك فوراً. 📲✨';
+  'تم إلغاء الأوردر. لو حصل ده بالخطأ، تقدر تعمل الأوردر تاني أو ترد على الرسالة دي.';
 
 // Health check
 app.get('/', (_req, res) => res.send('Ecwid → WhatsApp order confirmation: running'));
@@ -94,12 +95,22 @@ async function handleReply({ action, orderId, from }) {
       return;
     }
     await updateOrder(orderId, { fulfillmentStatus: CONFIRM_STATUS });
-    // Record confirmedAt — the poller ships single-product orders SHIP_DELAY_MIN later,
-    // giving the customer a window to cancel after confirming.
-    store.upsert(orderId, { status: 'confirmed', confirmedAt: new Date().toISOString(), repliedBy: from });
+    // When auto-ship is on, mark 'confirmed' so the poller ships it after the
+    // grace window. When off, mark 'confirmed_noship' so it stays in Processing
+    // and is never queued — no shipment, and no backlog if you toggle later.
+    const confirmedState = AUTO_SHIP ? 'confirmed' : 'confirmed_noship';
+    store.upsert(orderId, { status: confirmedState, confirmedAt: new Date().toISOString(), repliedBy: from });
     await sendText(from, CONFIRM_MESSAGE);
-    await notifyMerchant(`✅ Order ${orderId} CONFIRMED (ships via Bosta in ${SHIP_DELAY_MIN} min unless cancelled).`);
-    console.log(`[reply] order ${orderId} confirmed — will ship in ${SHIP_DELAY_MIN} min unless cancelled`);
+    await notifyMerchant(
+      AUTO_SHIP
+        ? `✅ Order ${orderId} CONFIRMED (ships via Bosta in ${SHIP_DELAY_MIN} min unless cancelled).`
+        : `✅ Order ${orderId} CONFIRMED — left in Processing (auto-ship is off).`
+    );
+    console.log(
+      AUTO_SHIP
+        ? `[reply] order ${orderId} confirmed — will ship in ${SHIP_DELAY_MIN} min unless cancelled`
+        : `[reply] order ${orderId} confirmed — left in Processing (AUTO_SHIP off)`
+    );
     return;
   }
 
