@@ -7,12 +7,9 @@ import { searchOrders, getOrder, extractOrderInfo } from './ecwid.js';
 import { sendPollTemplate } from './whatsapp.js';
 import { normalizePhone } from './phone.js';
 import { store } from './store.js';
-import { shipOrderViaBosta } from './shipping.js';
-import { checkDeliveryStatuses } from './followups.js';
-import { watchBostaDeliveries } from './bosta_watch.js';
+import { trackFromEcwid } from './ecwid_tracking.js';
 
 const COUNTRY = process.env.DEFAULT_COUNTRY_CODE || '20';
-const SHIP_DELAY_MS = Number(process.env.SHIP_DELAY_MINUTES || 60) * 60_000;
 const OVERLAP_SEC = 120;            // re-scan a little into the past when discovering new orders
 const MAX_RETRY_HOURS = Number(process.env.MAX_RETRY_HOURS || 24); // stop retrying a stuck order after this
 
@@ -88,24 +85,9 @@ async function pollOnce() {
     await attemptSend(rec.orderId, rec, true);
   }
 
-  // 3) Ship confirmed single-product orders once the grace period has passed.
-  //    Orders cancelled during the window are no longer 'confirmed', so skipped.
-  for (const rec of store.list()) {
-    if (rec.status !== 'confirmed' || !rec.confirmedAt) continue;
-    const age = Date.now() - new Date(rec.confirmedAt).getTime();
-    if (age >= SHIP_DELAY_MS) {
-      await shipOrderViaBosta(rec.orderId);
-    }
-  }
-
-  // 4) Check Bosta delivery status of shipped orders and send the post-delivery
-  //    follow-up messages (delivered offer / return reason). Self-throttled.
-  await checkDeliveryStatuses();
-
-  // 5) Watch-only mode: for merchants shipping manually (AUTO_SHIP off), poll
-  //    Bosta deliveries and send the same follow-ups. Self-throttled; no-op
-  //    unless BOSTA_WATCH=true.
-  await watchBostaDeliveries();
+  // 3) Bridge: pick up Bosta tracking numbers you entered on Ecwid orders and
+  //    poll their delivery status to send the Delivered/Exception messages.
+  await trackFromEcwid();
 }
 
 export function startPolling(intervalSec) {
