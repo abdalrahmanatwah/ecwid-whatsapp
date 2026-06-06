@@ -12,10 +12,6 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const CONFIRM_STATUS = process.env.CONFIRM_FULFILLMENT_STATUS || 'PROCESSING';
 const CANCEL_STATUS = process.env.CANCEL_PAYMENT_STATUS || 'CANCELLED';
-const SHIP_DELAY_MIN = Number(process.env.SHIP_DELAY_MINUTES || 60);
-// Master switch for Bosta auto-shipping. Defaults to true. Set AUTO_SHIP=false
-// to leave confirmed orders in Processing and never create a shipment.
-const AUTO_SHIP = String(process.env.AUTO_SHIP ?? 'true').toLowerCase() !== 'false';
 
 const CONFIRM_MESSAGE =
   '🎉 تّمام يا صاحبي، تم تأكيد الأوردر بنجاح. ✅\n' +
@@ -88,56 +84,30 @@ async function handleReply({ action, orderId, from }) {
   const status = store.get(orderId)?.status;
 
   if (action === 'confirm') {
-    // Confirm only acts on a fresh (un-acted) order. If it's already confirmed,
-    // shipped, or cancelled, do nothing — avoids re-shipping or un-cancelling.
+    // Confirm only acts on a fresh order. If already confirmed or cancelled, do nothing.
     if (status && status !== 'poll_sent') {
       console.log(`[reply] order ${orderId} is '${status}', ignoring confirm`);
       return;
     }
     await updateOrder(orderId, { fulfillmentStatus: CONFIRM_STATUS });
-    // When auto-ship is on, mark 'confirmed' so the poller ships it after the
-    // grace window. When off, mark 'confirmed_noship' so it stays in Processing
-    // and is never queued — no shipment, and no backlog if you toggle later.
-    const confirmedState = AUTO_SHIP ? 'confirmed' : 'confirmed_noship';
-    store.upsert(orderId, { status: confirmedState, confirmedAt: new Date().toISOString(), repliedBy: from });
+    store.upsert(orderId, { status: 'confirmed', confirmedAt: new Date().toISOString(), repliedBy: from });
     await sendText(from, CONFIRM_MESSAGE);
-    await notifyMerchant(
-      AUTO_SHIP
-        ? `✅ Order ${orderId} CONFIRMED (ships via Bosta in ${SHIP_DELAY_MIN} min unless cancelled).`
-        : `✅ Order ${orderId} CONFIRMED — left in Processing (auto-ship is off).`
-    );
-    console.log(
-      AUTO_SHIP
-        ? `[reply] order ${orderId} confirmed — will ship in ${SHIP_DELAY_MIN} min unless cancelled`
-        : `[reply] order ${orderId} confirmed — left in Processing (AUTO_SHIP off)`
-    );
+    await notifyMerchant(`✅ Order ${orderId} CONFIRMED — set to Processing.`);
+    console.log(`[reply] order ${orderId} confirmed → Processing`);
     return;
   }
 
   if (action === 'cancel') {
-    if (status === 'cancelled' || status === 'cancelled_after_ship') {
+    if (status === 'cancelled') {
       console.log(`[reply] order ${orderId} already cancelled, ignoring`);
       return;
     }
-
-    // Already shipped via Bosta — too late to auto-cancel the shipment.
-    if (status === 'shipped') {
-      await updateOrder(orderId, { paymentStatus: CANCEL_STATUS });
-      store.upsert(orderId, { status: 'cancelled_after_ship', repliedBy: from });
-      await sendText(from, CANCEL_MESSAGE);
-      await notifyMerchant(`⚠️ Order ${orderId} was ALREADY SHIPPED via Bosta but the customer just cancelled — cancel the Bosta shipment manually.`);
-      console.log(`[reply] order ${orderId} cancelled AFTER shipping — merchant alerted`);
-      return;
-    }
-
-    // Not yet shipped (poll_sent / confirmed / ship_failed / ship_skipped_multi /
-    // none): cancel cleanly. If it was 'confirmed', this stops the pending Bosta ship,
-    // because the poller and shipper only act on orders still in 'confirmed' state.
+    // Cancel cleanly — including after a confirm (customer changed their mind).
     await updateOrder(orderId, { paymentStatus: CANCEL_STATUS });
     store.upsert(orderId, { status: 'cancelled', repliedBy: from });
     await sendText(from, CANCEL_MESSAGE);
-    await notifyMerchant(`❌ Order ${orderId} was CANCELLED by the customer${status === 'confirmed' ? ' (after confirming — shipment stopped)' : ''}.`);
-    console.log(`[reply] order ${orderId} cancelled${status === 'confirmed' ? ' (was confirmed; shipment stopped)' : ''}`);
+    await notifyMerchant(`❌ Order ${orderId} was CANCELLED by the customer.`);
+    console.log(`[reply] order ${orderId} cancelled`);
     return;
   }
 }
