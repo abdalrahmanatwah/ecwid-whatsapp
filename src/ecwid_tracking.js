@@ -10,7 +10,7 @@
 // Two throttled phases per order, and it gives up after a cap so it never polls
 // forever. Never throws.
 
-import { getOrder } from './ecwid.js';
+import { getOrder, updateOrder } from './ecwid.js';
 import { getDeliveryState, bostaConfigured } from './bosta.js';
 import { sendTemplate } from './whatsapp.js';
 import { store } from './store.js';
@@ -23,15 +23,17 @@ const LOOK_EVERY_MS = Number(process.env.TRACK_LOOK_INTERVAL_MINUTES || 10) * 60
 const STATUS_EVERY_MS = Number(process.env.BOSTA_STATUS_INTERVAL_MINUTES || 20) * 60_000;
 const LOOK_MAX_DAYS = Number(process.env.TRACK_LOOK_MAX_DAYS || 14); // stop waiting for a tracking number
 const STATUS_MAX_DAYS = Number(process.env.FOLLOWUP_MAX_DAYS || 21); // stop polling status
+const DELIVERED_STATUS = process.env.DELIVERED_FULFILLMENT_STATUS || 'DELIVERED';
+const RETURNED_STATUS = process.env.RETURNED_FULFILLMENT_STATUS || 'RETURNED';
 
 const ms = (iso) => (iso ? Date.now() - new Date(iso).getTime() : Infinity);
 const days = (iso) => (iso ? (Date.now() - new Date(iso).getTime()) / 86_400_000 : 0);
 const isDelivered = (v) => /\bdelivered\b/i.test(v);
+const isReturned = (v) => /\breturned\b/i.test(v);
 const needsAction = (v) => /\bexception\b|awaiting/i.test(v);
 
 export async function trackFromEcwid() {
   if (!bostaConfigured()) return;
-  if (!DELIVERED_TEMPLATE && !REJECTED_TEMPLATE) return;
 
   for (const rec of store.list()) {
     // --- Phase A: confirmed order, no tracking yet → look for one on the Ecwid order ---
@@ -52,7 +54,12 @@ export async function trackFromEcwid() {
           console.log(`[track] order ${rec.orderId} tracking ${tn} found in Ecwid`);
         }
       } catch (err) {
-        console.warn(`[track] look-up failed for ${rec.orderId}:`, err.message);
+        if (/not found|order_not_found|\b404\b/i.test(err.message)) {
+          store.upsert(rec.orderId, { status: 'order_gone', shipError: err.message });
+          console.warn(`[track] order ${rec.orderId} no longer exists in Ecwid — stopped looking`);
+        } else {
+          console.warn(`[track] look-up failed for ${rec.orderId}:`, err.message);
+        }
       }
       continue;
     }
@@ -74,17 +81,25 @@ export async function trackFromEcwid() {
 
         const customer = rec.repliedBy || rec.to;
         if (isDelivered(st.value)) {
+          try { await updateOrder(rec.orderId, { fulfillmentStatus: DELIVERED_STATUS }); }
+          catch (e) { console.warn(`[track] couldn't set Ecwid ${DELIVERED_STATUS} for ${rec.orderId}:`, e.message); }
           if (DELIVERED_TEMPLATE && customer) await sendTemplate(customer, DELIVERED_TEMPLATE, LANG);
           store.upsert(rec.orderId, { status: 'delivered' });
-          await notifyMerchant(`📦 Order ${rec.orderId} DELIVERED — sent the 100 EGP photo offer.`);
-          console.log(`[track] order ${rec.orderId} delivered — offer sent`);
-        } else if (needsAction(st.value)) {
+          await notifyMerchant(`📦 Order ${rec.orderId} DELIVERED — marked Delivered on Ecwid and sent the 100 EGP offer.`);
+          console.log(`[track] order ${rec.orderId} delivered — Ecwid updated + offer sent`);
+        } else if (isReturned(st.value)) {
+          try { await updateOrder(rec.orderId, { fulfillmentStatus: RETURNED_STATUS }); }
+          catch (e) { console.warn(`[track] couldn't set Ecwid ${RETURNED_STATUS} for ${rec.orderId}:`, e.message); }
+          store.upsert(rec.orderId, { status: 'returned' });
+          await notifyMerchant(`↩️ Order ${rec.orderId} RETURNED — marked Returned on Ecwid.`);
+          console.log(`[track] order ${rec.orderId} returned — Ecwid updated`);
+        } else if (needsAction(st.value) && !rec.exceptionNotified) {
           if (REJECTED_TEMPLATE && customer) await sendTemplate(customer, REJECTED_TEMPLATE, LANG);
-          store.upsert(rec.orderId, { status: 'awaiting_action' });
-          await notifyMerchant(`⚠️ Order ${rec.orderId} needs action — asked the customer the reason / size fix.`);
-          console.log(`[track] order ${rec.orderId} exception — reason message sent`);
+          store.upsert(rec.orderId, { exceptionNotified: true }); // keep status 'tracking' — keep watching
+          await notifyMerchant(`⚠️ Order ${rec.orderId} hit a delivery problem — asked the customer the reason / size fix. Still watching for delivered or returned.`);
+          console.log(`[track] order ${rec.orderId} exception — reason message sent (still tracking)`);
         }
-        // otherwise still in transit — keep checking next interval
+        // otherwise still in transit (or exception already handled) — keep checking next interval
       } catch (err) {
         if (/not found|\b400\b|\b404\b/i.test(err.message)) {
           store.upsert(rec.orderId, { status: 'tracking_gone', shipError: err.message });
