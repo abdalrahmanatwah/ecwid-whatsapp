@@ -1,0 +1,99 @@
+// Ecwid → Bosta tracking bridge (for manual shipping).
+//
+// You create the Bosta shipment yourself and put its tracking number on the
+// Ecwid order. This watches your confirmed (Processing) orders, picks up that
+// tracking number from Ecwid, then polls Bosta for the delivery's status and
+// sends the follow-up messages:
+//   Delivered → 100 EGP photo offer
+//   Exception → rejection-reason (size fix, etc.)
+//
+// Two throttled phases per order, and it gives up after a cap so it never polls
+// forever. Never throws.
+
+import { getOrder } from './ecwid.js';
+import { getDeliveryState, bostaConfigured } from './bosta.js';
+import { sendTemplate } from './whatsapp.js';
+import { store } from './store.js';
+import { notifyMerchant } from './notify.js';
+
+const DELIVERED_TEMPLATE = process.env.DELIVERED_TEMPLATE_NAME || '';
+const REJECTED_TEMPLATE = process.env.REJECTED_TEMPLATE_NAME || '';
+const LANG = process.env.WHATSAPP_TEMPLATE_LANG || 'ar';
+const LOOK_EVERY_MS = Number(process.env.TRACK_LOOK_INTERVAL_MINUTES || 10) * 60_000;
+const STATUS_EVERY_MS = Number(process.env.BOSTA_STATUS_INTERVAL_MINUTES || 20) * 60_000;
+const LOOK_MAX_DAYS = Number(process.env.TRACK_LOOK_MAX_DAYS || 14); // stop waiting for a tracking number
+const STATUS_MAX_DAYS = Number(process.env.FOLLOWUP_MAX_DAYS || 21); // stop polling status
+
+const ms = (iso) => (iso ? Date.now() - new Date(iso).getTime() : Infinity);
+const days = (iso) => (iso ? (Date.now() - new Date(iso).getTime()) / 86_400_000 : 0);
+const isDelivered = (v) => /\bdelivered\b/i.test(v);
+const needsAction = (v) => /\bexception\b|awaiting/i.test(v);
+
+export async function trackFromEcwid() {
+  if (!bostaConfigured()) return;
+  if (!DELIVERED_TEMPLATE && !REJECTED_TEMPLATE) return;
+
+  for (const rec of store.list()) {
+    // --- Phase A: confirmed order, no tracking yet → look for one on the Ecwid order ---
+    if (rec.status === 'confirmed' && !rec.bostaTracking) {
+      if (ms(rec.lastTrackLook) < LOOK_EVERY_MS) continue;
+      store.upsert(rec.orderId, { lastTrackLook: new Date().toISOString() });
+
+      if (days(rec.confirmedAt) > LOOK_MAX_DAYS) {
+        store.upsert(rec.orderId, { status: 'no_tracking' }); // gave up waiting for a tracking number
+        continue;
+      }
+      try {
+        const order = await getOrder(rec.orderId);
+        const tn = String(order.trackingNumber || '').trim();
+        if (tn) {
+          store.upsert(rec.orderId, { status: 'tracking', bostaTracking: tn, trackingFoundAt: new Date().toISOString() });
+          await notifyMerchant(`📦 Order ${rec.orderId}: tracking ${tn} picked up from Ecwid — now watching delivery status.`);
+          console.log(`[track] order ${rec.orderId} tracking ${tn} found in Ecwid`);
+        }
+      } catch (err) {
+        console.warn(`[track] look-up failed for ${rec.orderId}:`, err.message);
+      }
+      continue;
+    }
+
+    // --- Phase B: tracked order → poll Bosta status ---
+    if (rec.status === 'tracking' && rec.bostaTracking) {
+      if (days(rec.trackingFoundAt) > STATUS_MAX_DAYS) {
+        store.upsert(rec.orderId, { status: 'tracking_timeout' });
+        continue;
+      }
+      if (ms(rec.lastStatusCheck) < STATUS_EVERY_MS) continue;
+      store.upsert(rec.orderId, { lastStatusCheck: new Date().toISOString() });
+
+      try {
+        const st = await getDeliveryState(rec.bostaTracking);
+        if (!st) continue;
+        store.upsert(rec.orderId, { lastState: st.value, lastStateCode: st.code });
+        console.log(`[track] order ${rec.orderId} Bosta state: "${st.value}" (code ${st.code})`);
+
+        const customer = rec.repliedBy || rec.to;
+        if (isDelivered(st.value)) {
+          if (DELIVERED_TEMPLATE && customer) await sendTemplate(customer, DELIVERED_TEMPLATE, LANG);
+          store.upsert(rec.orderId, { status: 'delivered' });
+          await notifyMerchant(`📦 Order ${rec.orderId} DELIVERED — sent the 100 EGP photo offer.`);
+          console.log(`[track] order ${rec.orderId} delivered — offer sent`);
+        } else if (needsAction(st.value)) {
+          if (REJECTED_TEMPLATE && customer) await sendTemplate(customer, REJECTED_TEMPLATE, LANG);
+          store.upsert(rec.orderId, { status: 'awaiting_action' });
+          await notifyMerchant(`⚠️ Order ${rec.orderId} needs action — asked the customer the reason / size fix.`);
+          console.log(`[track] order ${rec.orderId} exception — reason message sent`);
+        }
+        // otherwise still in transit — keep checking next interval
+      } catch (err) {
+        if (/not found|\b400\b|\b404\b/i.test(err.message)) {
+          store.upsert(rec.orderId, { status: 'tracking_gone', shipError: err.message });
+          console.warn(`[track] ${rec.orderId} not found in Bosta — stopped checking`);
+        } else {
+          console.warn(`[track] status check failed for ${rec.orderId}:`, err.message);
+        }
+      }
+      continue;
+    }
+  }
+}
