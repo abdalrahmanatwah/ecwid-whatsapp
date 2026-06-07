@@ -25,10 +25,12 @@ const LOOK_MAX_DAYS = Number(process.env.TRACK_LOOK_MAX_DAYS || 14); // stop wai
 const STATUS_MAX_DAYS = Number(process.env.FOLLOWUP_MAX_DAYS || 21); // stop polling status
 const DELIVERED_STATUS = process.env.DELIVERED_FULFILLMENT_STATUS || 'DELIVERED';
 const RETURNED_STATUS = process.env.RETURNED_FULFILLMENT_STATUS || 'RETURNED';
+const CANCEL_STATUS = process.env.CANCEL_PAYMENT_STATUS || 'CANCELLED';
 
 const ms = (iso) => (iso ? Date.now() - new Date(iso).getTime() : Infinity);
 const days = (iso) => (iso ? (Date.now() - new Date(iso).getTime()) / 86_400_000 : 0);
 const isDelivered = (v) => /\bdelivered\b/i.test(v);
+const isCanceled = (v) => /\bcancel/i.test(v);
 const isReturned = (v) => /\breturned\b/i.test(v);
 const needsAction = (v) => /\bexception\b|awaiting/i.test(v);
 
@@ -88,11 +90,19 @@ export async function trackFromEcwid() {
           await notifyMerchant(`📦 Order ${rec.orderId} DELIVERED — marked Delivered on Ecwid and sent the 100 EGP offer.`);
           console.log(`[track] order ${rec.orderId} delivered — Ecwid updated + offer sent`);
         } else if (isReturned(st.value)) {
+          const askNow = REJECTED_TEMPLATE && customer && !rec.exceptionNotified;
+          if (askNow) await sendTemplate(customer, REJECTED_TEMPLATE, LANG);
           try { await updateOrder(rec.orderId, { fulfillmentStatus: RETURNED_STATUS }); }
           catch (e) { console.warn(`[track] couldn't set Ecwid ${RETURNED_STATUS} for ${rec.orderId}:`, e.message); }
-          store.upsert(rec.orderId, { status: 'returned' });
-          await notifyMerchant(`↩️ Order ${rec.orderId} RETURNED — marked Returned on Ecwid.`);
-          console.log(`[track] order ${rec.orderId} returned — Ecwid updated`);
+          store.upsert(rec.orderId, { status: 'returned', exceptionNotified: true });
+          await notifyMerchant(`↩️ Order ${rec.orderId} RETURNED — marked Returned on Ecwid${askNow ? ' and asked the customer the reason' : ''}.`);
+          console.log(`[track] order ${rec.orderId} returned — Ecwid updated${askNow ? ' + reason message sent' : ''}`);
+        } else if (isCanceled(st.value)) {
+          try { await updateOrder(rec.orderId, { paymentStatus: CANCEL_STATUS }); }
+          catch (e) { console.warn(`[track] couldn't set Ecwid cancelled for ${rec.orderId}:`, e.message); }
+          store.upsert(rec.orderId, { status: 'shipment_canceled' });
+          await notifyMerchant(`🚫 Order ${rec.orderId} shipment CANCELED in Bosta — marked Cancelled on Ecwid.`);
+          console.log(`[track] order ${rec.orderId} shipment canceled — Ecwid updated`);
         } else if (needsAction(st.value) && !rec.exceptionNotified) {
           if (REJECTED_TEMPLATE && customer) await sendTemplate(customer, REJECTED_TEMPLATE, LANG);
           store.upsert(rec.orderId, { exceptionNotified: true }); // keep status 'tracking' — keep watching
