@@ -29,6 +29,10 @@ const CANCEL_STATUS = process.env.CANCEL_PAYMENT_STATUS || 'CANCELLED';
 
 const ms = (iso) => (iso ? Date.now() - new Date(iso).getTime() : Infinity);
 const days = (iso) => (iso ? (Date.now() - new Date(iso).getTime()) / 86_400_000 : 0);
+
+// Statuses meaning "confirmed, still waiting for a tracking number" — includes
+// leftovers from the old auto-ship version (ship_failed, dry_run, ship_skipped_multi).
+const AWAITING_TRACKING = new Set(['confirmed', 'confirmed_noship', 'ship_failed', 'dry_run', 'ship_skipped_multi']);
 const isDelivered = (v) => /\bdelivered\b/i.test(v);
 const isCanceled = (v) => /\bcancel/i.test(v);
 
@@ -66,7 +70,7 @@ export async function trackFromEcwid() {
 
   for (const rec of store.list()) {
     // --- Phase A: confirmed order, no tracking yet → look for one on the Ecwid order ---
-    if ((rec.status === 'confirmed' || rec.status === 'confirmed_noship') && !rec.bostaTracking) {
+    if (AWAITING_TRACKING.has(rec.status) && !rec.bostaTracking) {
       if (ms(rec.lastTrackLook) < LOOK_EVERY_MS) continue;
       store.upsert(rec.orderId, { lastTrackLook: new Date().toISOString() });
 
