@@ -31,6 +31,20 @@ const ms = (iso) => (iso ? Date.now() - new Date(iso).getTime() : Infinity);
 const days = (iso) => (iso ? (Date.now() - new Date(iso).getTime()) / 86_400_000 : 0);
 const isDelivered = (v) => /\bdelivered\b/i.test(v);
 const isCanceled = (v) => /\bcancel/i.test(v);
+
+// Ecwid stores tracking on the order's `shipments` array (newer model) and/or the
+// legacy top-level `trackingNumber`. Check both.
+function extractTracking(order) {
+  let tn = String(order.trackingNumber || '').trim();
+  if (tn) return tn;
+  if (Array.isArray(order.shipments)) {
+    for (const s of order.shipments) {
+      const t = String(s?.trackingNumber || s?.tracking_number || '').trim();
+      if (t) return t;
+    }
+  }
+  return '';
+}
 const isReturned = (v) => /\breturned\b/i.test(v);
 const needsAction = (v) => /\bexception\b|awaiting/i.test(v);
 
@@ -54,10 +68,9 @@ export async function trackFromEcwid() {
       }
       try {
         const order = await getOrder(rec.orderId);
-        const tn = String(order.trackingNumber || '').trim();
+        const tn = extractTracking(order);
         if (process.env.TRACK_DEBUG === 'true') {
-          const trackKeys = Object.keys(order).filter(k => /track|ship|fulfil/i.test(k)).join(', ');
-          console.log(`[track][debug] ${rec.orderId}: trackingNumber="${tn}" | fulfillmentStatus="${order.fulfillmentStatus || ''}" | relevant keys: ${trackKeys}`);
+          console.log(`[track][debug] ${rec.orderId}: extracted tracking="${tn}" | fulfillmentStatus="${order.fulfillmentStatus || ''}" | shipments=${JSON.stringify(order.shipments || [])}`);
         }
         if (tn) {
           store.upsert(rec.orderId, { status: 'tracking', bostaTracking: tn, trackingFoundAt: new Date().toISOString() });
