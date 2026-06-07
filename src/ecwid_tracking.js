@@ -37,6 +37,11 @@ const needsAction = (v) => /\bexception\b|awaiting/i.test(v);
 export async function trackFromEcwid() {
   if (!bostaConfigured()) return;
 
+  if (process.env.TRACK_DEBUG === 'true') {
+    const summary = store.list().map(r => `${r.orderId}:${r.status}${r.bostaTracking ? '(' + r.bostaTracking + ')' : ''}`).join(' ');
+    console.log(`[track][debug] store has ${store.list().length} orders: ${summary || '(none)'}`);
+  }
+
   for (const rec of store.list()) {
     // --- Phase A: confirmed order, no tracking yet → look for one on the Ecwid order ---
     if (rec.status === 'confirmed' && !rec.bostaTracking) {
@@ -50,6 +55,10 @@ export async function trackFromEcwid() {
       try {
         const order = await getOrder(rec.orderId);
         const tn = String(order.trackingNumber || '').trim();
+        if (process.env.TRACK_DEBUG === 'true') {
+          const trackKeys = Object.keys(order).filter(k => /track|ship|fulfil/i.test(k)).join(', ');
+          console.log(`[track][debug] ${rec.orderId}: trackingNumber="${tn}" | fulfillmentStatus="${order.fulfillmentStatus || ''}" | relevant keys: ${trackKeys}`);
+        }
         if (tn) {
           store.upsert(rec.orderId, { status: 'tracking', bostaTracking: tn, trackingFoundAt: new Date().toISOString() });
           await notifyMerchant(`📦 Order ${rec.orderId}: tracking ${tn} picked up from Ecwid — now watching delivery status.`);
