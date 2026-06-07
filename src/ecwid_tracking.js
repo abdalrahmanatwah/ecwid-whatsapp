@@ -58,7 +58,7 @@ export async function trackFromEcwid() {
 
   for (const rec of store.list()) {
     // --- Phase A: confirmed order, no tracking yet → look for one on the Ecwid order ---
-    if (rec.status === 'confirmed' && !rec.bostaTracking) {
+    if ((rec.status === 'confirmed' || rec.status === 'confirmed_noship') && !rec.bostaTracking) {
       if (ms(rec.lastTrackLook) < LOOK_EVERY_MS) continue;
       store.upsert(rec.orderId, { lastTrackLook: new Date().toISOString() });
 
