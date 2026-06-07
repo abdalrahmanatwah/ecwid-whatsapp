@@ -45,6 +45,14 @@ function extractTracking(order) {
   }
   return '';
 }
+
+// Send a template but never throw — a failed/unapproved template must not block
+// the order from being marked done (otherwise it retries forever).
+async function trySend(customer, template, lang, orderId) {
+  if (!template || !customer) return false;
+  try { await sendTemplate(customer, template, lang); return true; }
+  catch (e) { console.warn(`[track] message send failed for ${orderId} (template ${template}):`, e.message); return false; }
+}
 const isReturned = (v) => /\breturned\b/i.test(v);
 const needsAction = (v) => /\bexception\b|awaiting/i.test(v);
 
@@ -107,13 +115,13 @@ export async function trackFromEcwid() {
         if (isDelivered(st.value)) {
           try { await updateOrder(rec.orderId, { fulfillmentStatus: DELIVERED_STATUS }); }
           catch (e) { console.warn(`[track] couldn't set Ecwid ${DELIVERED_STATUS} for ${rec.orderId}:`, e.message); }
-          if (DELIVERED_TEMPLATE && customer) await sendTemplate(customer, DELIVERED_TEMPLATE, LANG);
+          await trySend(customer, DELIVERED_TEMPLATE, LANG, rec.orderId);
           store.upsert(rec.orderId, { status: 'delivered' });
           await notifyMerchant(`📦 Order ${rec.orderId} DELIVERED — marked Delivered on Ecwid and sent the 100 EGP offer.`);
           console.log(`[track] order ${rec.orderId} delivered — Ecwid updated + offer sent`);
         } else if (isReturned(st.value)) {
           const askNow = REJECTED_TEMPLATE && customer && !rec.exceptionNotified;
-          if (askNow) await sendTemplate(customer, REJECTED_TEMPLATE, LANG);
+          if (askNow) await trySend(customer, REJECTED_TEMPLATE, LANG, rec.orderId);
           try { await updateOrder(rec.orderId, { fulfillmentStatus: RETURNED_STATUS }); }
           catch (e) { console.warn(`[track] couldn't set Ecwid ${RETURNED_STATUS} for ${rec.orderId}:`, e.message); }
           store.upsert(rec.orderId, { status: 'returned', exceptionNotified: true });
@@ -126,7 +134,7 @@ export async function trackFromEcwid() {
           await notifyMerchant(`🚫 Order ${rec.orderId} shipment CANCELED in Bosta — marked Cancelled on Ecwid.`);
           console.log(`[track] order ${rec.orderId} shipment canceled — Ecwid updated`);
         } else if (needsAction(st.value) && !rec.exceptionNotified) {
-          if (REJECTED_TEMPLATE && customer) await sendTemplate(customer, REJECTED_TEMPLATE, LANG);
+          await trySend(customer, REJECTED_TEMPLATE, LANG, rec.orderId);
           store.upsert(rec.orderId, { exceptionNotified: true }); // keep status 'tracking' — keep watching
           await notifyMerchant(`⚠️ Order ${rec.orderId} hit a delivery problem — asked the customer the reason / size fix. Still watching for delivered or returned.`);
           console.log(`[track] order ${rec.orderId} exception — reason message sent (still tracking)`);
