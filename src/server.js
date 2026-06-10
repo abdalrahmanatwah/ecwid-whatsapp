@@ -47,6 +47,19 @@ app.post('/webhooks/whatsapp', async (req, res) => {
     const entries = req.body?.entry || [];
     for (const entry of entries) {
       for (const change of entry.changes || []) {
+        // Delivery status updates (sent / delivered / read / failed). A "failed"
+        // status carries the reason WhatsApp didn't deliver — quality limits, etc.
+        for (const st of change.value?.statuses || []) {
+          if (st.status === 'failed') {
+            const errs = (st.errors || [])
+              .map((e) => `${e.code} ${e.title}${e.error_data?.details ? ' — ' + e.error_data.details : ''}`)
+              .join('; ');
+            console.warn(`[whatsapp] to ${st.recipient_id} FAILED: ${errs || 'unknown reason'}`);
+          } else if (st.status === 'sent' || st.status === 'delivered') {
+            console.log(`[whatsapp] to ${st.recipient_id}: ${st.status}`);
+          }
+        }
+
         const messages = change.value?.messages || [];
         for (const msg of messages) {
           const payload = extractButtonPayload(msg);
