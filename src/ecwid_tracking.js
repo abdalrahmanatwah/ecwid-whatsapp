@@ -26,6 +26,7 @@ const STATUS_MAX_DAYS = Number(process.env.FOLLOWUP_MAX_DAYS || 21); // stop pol
 const DELIVERED_STATUS = process.env.DELIVERED_FULFILLMENT_STATUS || 'DELIVERED';
 const RETURNED_STATUS = process.env.RETURNED_FULFILLMENT_STATUS || 'RETURNED';
 const CANCEL_STATUS = process.env.CANCEL_PAYMENT_STATUS || 'CANCELLED';
+const CANCEL_FULFILLMENT_STATUS = process.env.CANCEL_FULFILLMENT_STATUS || 'WILL_NOT_DELIVER';
 
 const ms = (iso) => (iso ? Date.now() - new Date(iso).getTime() : Infinity);
 const days = (iso) => (iso ? (Date.now() - new Date(iso).getTime()) / 86_400_000 : 0);
@@ -160,7 +161,7 @@ export async function trackFromEcwid() {
           await notifyMerchant(`↩️ Order ${rec.orderId} RETURNED — restocked items and marked Returned on Ecwid${askNow ? ', asked the customer the reason' : ''}.`);
           console.log(`[track] order ${rec.orderId} returned — restocked + Ecwid updated${askNow ? ' + reason message sent' : ''}`);
         } else if (isCanceled(st.value)) {
-          try { await updateOrder(rec.orderId, { paymentStatus: CANCEL_STATUS }); }
+          try { await updateOrder(rec.orderId, { paymentStatus: CANCEL_STATUS, fulfillmentStatus: CANCEL_FULFILLMENT_STATUS }); }
           catch (e) { console.warn(`[track] couldn't set Ecwid cancelled for ${rec.orderId}:`, e.message); }
           store.upsert(rec.orderId, { status: 'shipment_canceled' });
           await notifyMerchant(`🚫 Order ${rec.orderId} shipment CANCELED in Bosta — marked Cancelled on Ecwid.`);
