@@ -65,6 +65,28 @@ export async function searchOrders(createdFromUnix) {
   return all;
 }
 
+// POST /products/{productId}/inventory (or .../combinations/{combinationId}/inventory)
+// Adjusts stock by a RELATIVE delta. For a size variation pass its combinationId;
+// for a base product pass combinationId = 0/null. Ecwid ignores this for items whose
+// stock is "Unlimited", so it's safe to call regardless.
+export async function adjustInventory(productId, combinationId, quantityDelta) {
+  const path = combinationId
+    ? `${BASE}/products/${productId}/combinations/${combinationId}/inventory`
+    : `${BASE}/products/${productId}/inventory`;
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ quantityDelta }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(
+      `Ecwid adjustInventory ${productId}${combinationId ? '/' + combinationId : ''} failed: ${res.status} ${text}`
+    );
+  }
+  return res.json(); // { updateCount: 1 }
+}
+
 // Pull a usable phone, name, number and total out of an Ecwid order object.
 export function extractOrderInfo(order) {
   const phone =
