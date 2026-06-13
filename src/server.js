@@ -12,6 +12,7 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const CONFIRM_STATUS = process.env.CONFIRM_FULFILLMENT_STATUS || 'PROCESSING';
 const CANCEL_STATUS = process.env.CANCEL_PAYMENT_STATUS || 'CANCELLED';
+const CANCEL_FULFILLMENT_STATUS = process.env.CANCEL_FULFILLMENT_STATUS || 'WILL_NOT_DELIVER';
 
 const CONFIRM_MESSAGE =
   '🎉 تّمام يا صاحبي، تم تأكيد الأوردر بنجاح. ✅\n' +
@@ -116,7 +117,7 @@ async function handleReply({ action, orderId, from }) {
       return;
     }
     // Cancel cleanly — including after a confirm (customer changed their mind).
-    await updateOrder(orderId, { paymentStatus: CANCEL_STATUS });
+    await updateOrder(orderId, { paymentStatus: CANCEL_STATUS, fulfillmentStatus: CANCEL_FULFILLMENT_STATUS });
     store.upsert(orderId, { status: 'cancelled', repliedBy: from });
     await sendText(from, CANCEL_MESSAGE);
     await notifyMerchant(`❌ Order ${orderId} was CANCELLED by the customer.`);
