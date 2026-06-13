@@ -10,7 +10,7 @@
 // Two throttled phases per order, and it gives up after a cap so it never polls
 // forever. Never throws.
 
-import { getOrder, updateOrder } from './ecwid.js';
+import { getOrder, updateOrder, adjustInventory } from './ecwid.js';
 import { getDeliveryState, bostaConfigured } from './bosta.js';
 import { sendTemplate } from './whatsapp.js';
 import { store } from './store.js';
@@ -56,6 +56,33 @@ async function trySend(customer, template, lang, orderId) {
   if (!template || !customer) return false;
   try { await sendTemplate(customer, template, lang); return true; }
   catch (e) { console.warn(`[track] message send failed for ${orderId} (template ${template}):`, e.message); return false; }
+}
+
+// On a return, add every line item's quantity back to its size's stock in Ecwid.
+// Uses the order's own data (product + selected size), so no package text is parsed.
+// Never throws — a stock hiccup must not block the order from being marked returned.
+async function restockOrder(orderId) {
+  let order;
+  try {
+    order = await getOrder(orderId);
+  } catch (e) {
+    console.warn(`[stock] couldn't read order ${orderId} to restock:`, e.message);
+    return;
+  }
+  const items = Array.isArray(order.items) ? order.items : [];
+  for (const it of items) {
+    const pid = it.productId;
+    const cid = it.combinationId || 0; // variation id; 0 ⇒ base product
+    const qty = it.quantity || 1;
+    if (!pid) continue;
+    const where = (it.selectedOptions || []).map((o) => `${o.name}: ${o.value}`).join(', ');
+    try {
+      await adjustInventory(pid, cid || null, qty);
+      console.log(`[stock] restocked +${qty} → ${it.name}${where ? ' (' + where + ')' : ''}${cid ? ' [comb ' + cid + ']' : ' [base product]'}`);
+    } catch (e) {
+      console.warn(`[stock] restock failed for "${it.name}"${where ? ' (' + where + ')' : ''} in ${orderId}:`, e.message);
+    }
+  }
 }
 const isReturned = (v) => /\breturned\b/i.test(v);
 const needsAction = (v) => /\bexception\b|awaiting/i.test(v);
@@ -126,11 +153,12 @@ export async function trackFromEcwid() {
         } else if (isReturned(st.value)) {
           const askNow = REJECTED_TEMPLATE && customer && !rec.exceptionNotified;
           if (askNow) await trySend(customer, REJECTED_TEMPLATE, LANG, rec.orderId);
+          await restockOrder(rec.orderId); // put the returned size(s) back into stock
           try { await updateOrder(rec.orderId, { fulfillmentStatus: RETURNED_STATUS }); }
           catch (e) { console.warn(`[track] couldn't set Ecwid ${RETURNED_STATUS} for ${rec.orderId}:`, e.message); }
           store.upsert(rec.orderId, { status: 'returned', exceptionNotified: true });
-          await notifyMerchant(`↩️ Order ${rec.orderId} RETURNED — marked Returned on Ecwid${askNow ? ' and asked the customer the reason' : ''}.`);
-          console.log(`[track] order ${rec.orderId} returned — Ecwid updated${askNow ? ' + reason message sent' : ''}`);
+          await notifyMerchant(`↩️ Order ${rec.orderId} RETURNED — restocked items and marked Returned on Ecwid${askNow ? ', asked the customer the reason' : ''}.`);
+          console.log(`[track] order ${rec.orderId} returned — restocked + Ecwid updated${askNow ? ' + reason message sent' : ''}`);
         } else if (isCanceled(st.value)) {
           try { await updateOrder(rec.orderId, { paymentStatus: CANCEL_STATUS }); }
           catch (e) { console.warn(`[track] couldn't set Ecwid cancelled for ${rec.orderId}:`, e.message); }
