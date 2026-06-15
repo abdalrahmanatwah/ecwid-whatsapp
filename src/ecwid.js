@@ -65,6 +65,29 @@ export async function searchOrders(createdFromUnix) {
   return all;
 }
 
+// GET /carts — abandoned carts (incomplete checkouts). Returns an array.
+export async function searchAbandonedCarts(createdFromUnix) {
+  const params = new URLSearchParams({ limit: '100' });
+  if (createdFromUnix) params.set('createdFrom', String(createdFromUnix));
+  const res = await fetch(`${BASE}/carts?${params.toString()}`, { headers: authHeaders() });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`Ecwid searchCarts failed: ${res.status} ${t.slice(0, 150)}`);
+  }
+  const data = await res.json();
+  return Array.isArray(data.items) ? data.items : [];
+}
+
+// GET /products/{id} — used to read a size variation's current stock.
+export async function getProduct(productId) {
+  const res = await fetch(`${BASE}/products/${productId}`, { headers: authHeaders() });
+  if (!res.ok) {
+    const t = await res.text().catch(() => '');
+    throw new Error(`Ecwid getProduct ${productId} failed: ${res.status} ${t.slice(0, 120)}`);
+  }
+  return res.json();
+}
+
 // POST /products/{productId}/inventory (or .../combinations/{combinationId}/inventory)
 // Adjusts stock by a RELATIVE delta. For a size variation pass its combinationId;
 // for a base product pass combinationId = 0/null. Ecwid ignores this for items whose
