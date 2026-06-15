@@ -8,6 +8,7 @@ import { sendPollTemplate } from './whatsapp.js';
 import { normalizePhone } from './phone.js';
 import { store } from './store.js';
 import { trackFromEcwid } from './ecwid_tracking.js';
+import { checkAbandonedCarts } from './abandoned_carts.js';
 
 const COUNTRY = process.env.DEFAULT_COUNTRY_CODE || '20';
 const OVERLAP_SEC = 120;            // re-scan a little into the past when discovering new orders
@@ -88,6 +89,9 @@ async function pollOnce() {
   // 3) Bridge: pick up Bosta tracking numbers you entered on Ecwid orders and
   //    poll their delivery status to send the Delivered/Exception messages.
   await trackFromEcwid();
+
+  // 4) Abandoned-cart "last piece" nudges (self-throttled to its own interval).
+  await checkAbandonedCarts();
 }
 
 export function startPolling(intervalSec) {
