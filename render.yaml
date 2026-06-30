@@ -46,3 +46,10 @@ services:
         value: 499k
       - key: DASHBOARD_PASSWORD
         sync: false
+      # Auto-ship (restored): creates the Bosta shipment automatically after the
+      # grace window below, for single-item orders with a recognized city and an
+      # Arabic-script address. Anything else falls back to manual, same as before.
+      - key: AUTO_SHIP
+        value: "true"
+      - key: SHIP_DELAY_MIN
+        value: "15"

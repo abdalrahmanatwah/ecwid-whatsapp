@@ -96,6 +96,39 @@ ngrok http 3000      # use the https URL for the WhatsApp webhook
 
 ---
 
+## Auto-ship
+
+After a customer confirms (نعم), the order is **not** shipped immediately — it waits
+`SHIP_DELAY_MIN` minutes (default 15) so a customer who changes their mind seconds later
+doesn't get a shipment created anyway. Once that window passes with no cancellation, the
+order ships automatically via Bosta — but only if **every** one of these holds:
+
+- Exactly one line item, quantity 1 (multi-item orders are left for manual shipping, same
+  scope as before)
+- The order's city matches one of Bosta's own cities exactly (fetched live from Bosta, not
+  a hardcoded list — a near-miss is **not** force-matched)
+- The address is already in Arabic script
+
+That last one is worth being direct about: **this build does not auto-translate an
+English-written address.** The original system's documented behavior was to fail safe on a
+translation failure rather than risk a wrong address, and since the original translation
+code wasn't available to restore, I kept the safe half of that behavior (fail to manual) but
+left out the automatic part. If you want that back, it's a real follow-up, not a silent gap —
+let me know and I'll wire in an actual translation step.
+
+Any of the checks above failing — multi-item, unrecognized city, English address, missing
+phone, anything — leaves the order exactly where it would sit under fully-manual shipping:
+**Processing**, with status `ship_failed` internally, and a WhatsApp alert to you. Nothing
+ships on a guess.
+
+On success, the tracking number is written onto the order automatically — the same field
+you've been pasting it into by hand — so the existing delivery-status bridge, dashboard, and
+"100 EGP delivered offer" message all pick it up with no manual step.
+
+Turn it off entirely with `AUTO_SHIP=false` to go back to fully manual.
+
+---
+
 ## Dashboard
 
 `/dashboard` shows Bosta delivery rate, earnings, undelivered orders, cash collected vs
@@ -161,6 +194,8 @@ accident.
 | `MERCHANT_WHATSAPP` | Optional: get pinged on each reply |
 | `DASHBOARD_USER` | Dashboard login username (default `499k`) |
 | `DASHBOARD_PASSWORD` | Dashboard login password — **required**, no default |
+| `AUTO_SHIP` | `true`/`false` — auto-ship via Bosta after the grace window (default `true`) |
+| `SHIP_DELAY_MIN` | Minutes to wait after confirm before auto-shipping (default `15`) |
 
 ---
 

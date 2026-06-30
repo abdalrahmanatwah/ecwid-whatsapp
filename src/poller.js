@@ -9,10 +9,14 @@ import { normalizePhone } from './phone.js';
 import { store } from './store.js';
 import { trackFromEcwid } from './ecwid_tracking.js';
 import { checkAbandonedCarts } from './abandoned_carts.js';
+import { autoShipOrder } from './auto_ship.js';
+import { notifyMerchant } from './notify.js';
 
 const COUNTRY = process.env.DEFAULT_COUNTRY_CODE || '20';
 const OVERLAP_SEC = 120;            // re-scan a little into the past when discovering new orders
 const MAX_RETRY_HOURS = Number(process.env.MAX_RETRY_HOURS || 24); // stop retrying a stuck order after this
+const AUTO_SHIP = String(process.env.AUTO_SHIP ?? 'true').toLowerCase() !== 'false';
+const SHIP_DELAY_MIN = Number(process.env.SHIP_DELAY_MIN || 15); // grace window after confirm
 
 const nowUnix = () => Math.floor(Date.now() / 1000);
 
@@ -86,11 +90,39 @@ async function pollOnce() {
     await attemptSend(rec.orderId, rec, true);
   }
 
-  // 3) Bridge: pick up Bosta tracking numbers you entered on Ecwid orders and
-  //    poll their delivery status to send the Delivered/Exception messages.
+  // 3) Auto-ship: confirmed orders past their grace window, shipped via Bosta
+  //    automatically — unless something about the order makes that unsafe to do
+  //    blind, in which case it's left exactly where the fully-manual flow leaves
+  //    it (status 'ship_failed', which the bridge below already knows to treat
+  //    as "waiting for someone to paste a tracking number").
+  if (AUTO_SHIP) {
+    for (const rec of store.list()) {
+      if (rec.status !== 'confirmed') continue;
+      const elapsedMin = (Date.now() - new Date(rec.confirmedAt || 0).getTime()) / 60_000;
+      if (elapsedMin < SHIP_DELAY_MIN) continue; // still inside the cancellation window
+
+      try {
+        const { trackingNumber } = await autoShipOrder(rec.orderId);
+        store.upsert(rec.orderId, {
+          status: 'tracking',
+          bostaTracking: trackingNumber,
+          trackingFoundAt: new Date().toISOString(),
+        });
+        await notifyMerchant(`🚚 Order ${rec.orderId} auto-shipped via Bosta — tracking ${trackingNumber}.`);
+        console.log(`[autoship] order ${rec.orderId} shipped, tracking ${trackingNumber}`);
+      } catch (err) {
+        store.upsert(rec.orderId, { status: 'ship_failed', shipError: err.message });
+        await notifyMerchant(`⚠️ Order ${rec.orderId} auto-ship skipped (${err.message}) — needs a manual tracking number.`);
+        console.warn(`[autoship] order ${rec.orderId} not shipped: ${err.message}`);
+      }
+    }
+  }
+
+  // 4) Bridge: pick up Bosta tracking numbers (auto-ship above, or pasted in
+  //    manually) and poll their delivery status to send Delivered/Exception messages.
   await trackFromEcwid();
 
-  // 4) Abandoned-cart "last piece" nudges (self-throttled to its own interval).
+  // 5) Abandoned-cart "last piece" nudges (self-throttled to its own interval).
   await checkAbandonedCarts();
 }
 
