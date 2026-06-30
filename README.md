@@ -106,14 +106,33 @@ It reads straight from Ecwid (no separate database): orders already carry the de
 returned / cancelled status that the tracking bridge writes back onto them, so the numbers
 are always live and never drift out of sync.
 
-**Definitions** (so the numbers mean what you'd expect):
+**The date model — read this, it's not the obvious choice:**
+
+The period tabs (Today / 7d / etc.) filter by **resolution date** — when an order was
+*marked* delivered/returned/cancelled — not by when it was originally placed. So "Today"
+means "what got resolved today", which can absolutely include an order placed a week ago
+that only finished its delivery attempt today. This matches what Bosta's own dashboard
+shows for "yesterday", and it's the only framing where "today's earnings" means real cash
+that landed today rather than a number that's structurally near-zero for any recent day
+(since delivery takes time, almost nothing placed *today* has resolved *today*).
+
+Two things are deliberately **not** filtered by the period tabs at all, since they're "right
+now" concepts, not historical ones:
+- **In transit** — currently-unresolved orders, found via a fixed 45-day lookback (past
+  the 21-day point where the tracking bridge gives up on a delivery).
+- **Cash pending** — the value of those in-transit orders.
+
+These sit in their own dashed "Right now" box on the dashboard so they're visually distinct
+from the period-scoped numbers above them.
+
+A separate **"X placed"** stat (next to "Resolved this period") shows orders actually placed
+in the selected window, by creation date — kept apart from the delivered/undelivered counts
+on purpose, since blending the two is exactly what caused the original confusion.
+
+**Other definitions:**
 - A day "starts" at midnight **Cairo time**, not server time.
-- *Earnings* and *cash collected* only count **delivered** orders — COD cash only really
-  lands once the courier actually hands it over.
-- *Undelivered* = returned or cancelled, **resolved** within the window. Orders still moving
-  (Processing / Shipped, tracking not yet resolved) are shown separately as "in transit" and
-  don't count against the delivery rate — they just haven't had time to resolve yet.
-- *Top products* and the *category split* are built from delivered orders only.
+- *Earnings* / *cash collected* = sum of `total` for delivered orders resolved in the window.
+- *Top products* and *category split* are built from those same delivered orders.
 - The category split is keyword-based (`tennis`/`padel` → Tennis & Padel,
   `running`/`fitness`/`training`/`gym` → Running & Fitness, everything else → Other) since
   Ecwid's order API doesn't carry a category field. Edit `CATEGORY_KEYWORDS` near the top of

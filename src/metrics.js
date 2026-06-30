@@ -1,22 +1,33 @@
-// Dashboard metrics: turns a window of Ecwid orders into the numbers on the board.
+// Dashboard metrics: turns two separate Ecwid queries into the numbers on the board.
 //
-// Definitions (chosen deliberately — see DEPLOY.md "Dashboard" section for the why):
-//   - Windows are anchored to order PLACEMENT date (createTimestamp), in Africa/Cairo
-//     local time, not server UTC. "Today" means Cairo's today.
-//   - DELIVERED  = fulfillmentStatus DELIVERED            → counts as earned + collected.
-//   - UNDELIVERED = fulfillmentStatus RETURNED or WILL_NOT_DELIVER (covers both the
-//     customer-cancel-before-ship path and the Bosta-shipment-cancelled path — both
-//     already converge on WILL_NOT_DELIVER in ecwid_tracking.js / server.js).
-//   - IN_TRANSIT = everything else (Processing, Shipped, awaiting tracking, etc.) —
-//     not yet resolved, so it's excluded from the delivery-rate denominator rather
-//     than counted as a failure. Shown separately as "still moving" context.
-//   - Delivery rate = DELIVERED / (DELIVERED + UNDELIVERED) among RESOLVED orders only.
-//   - Cash collected = sum of `total` for DELIVERED orders (COD cash only lands on
-//     a successful delivery). Cash pending = sum of `total` for IN_TRANSIT orders.
+// THE KEY DESIGN DECISION (changed after real-world testing against Bosta's own
+// dashboard): a COD business's "today's earnings" means "what actually got paid
+// today", not "what fraction of today's brand-new orders happen to have resolved
+// already" — the latter is structurally close to zero for any recent day, since
+// delivery takes time. So:
+//
+//   - DELIVERED / UNDELIVERED / earnings / delivery rate / top products / category
+//     split are all anchored to RESOLUTION date (when Bosta's status landed on the
+//     order) via Ecwid's `updatedFrom`/`updatedTo`, filtered to orders that are
+//     actually in a resolved state. This matches what Bosta's own "yesterday" view
+//     shows, and answers "what did I actually earn/lose in this window".
+//
+//   - IN_TRANSIT and cash PENDING are NOT period-filtered at all — they're a live
+//     "right now" snapshot (everything currently unresolved, looked up via a fixed
+//     45-day placement lookback, comfortably past the 21-day point where the
+//     tracking bridge gives up on a delivery). A package doesn't become less "in
+//     transit" because it falls outside whatever date range you happen to have
+//     selected.
+//
+//   - PLACED is a separate, clearly-labeled context stat — orders placed in the
+//     window by creation date — kept distinct so it's never confused with the
+//     resolution-based numbers above it.
 
 const CAIRO_TZ = 'Africa/Cairo';
 const UNDELIVERED_STATUSES = new Set(['RETURNED', 'WILL_NOT_DELIVER']);
 const DELIVERED_STATUS = 'DELIVERED';
+const RESOLVED_STATUSES = new Set([DELIVERED_STATUS, ...UNDELIVERED_STATUSES]);
+const IN_TRANSIT_LOOKBACK_DAYS = 45;
 
 // Best-effort category classifier from item names. Edit these keyword lists if a
 // product doesn't land in the bucket you'd expect — there's no real category field
@@ -36,18 +47,10 @@ function classifyCategory(itemName) {
 
 // --- Cairo-local day boundaries, DST-correct (Egypt uses Africa/Cairo: EET/EEST) ---
 
-// Returns the UNIX-seconds timestamp for the start of `date`'s Cairo-local day.
 function cairoStartOfDay(date) {
-  // en-CA gives YYYY-MM-DD, which is what we need to rebuild the boundary.
   const ymd = new Intl.DateTimeFormat('en-CA', {
-    timeZone: CAIRO_TZ,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
+    timeZone: CAIRO_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(date);
-  // Find the UTC instant whose Cairo-local clock reads 00:00:00 on that date by
-  // checking the Cairo UTC offset for a guess instant, then correcting once —
-  // safe because EET/EEST are both whole-hour offsets so one correction suffices.
   const guess = new Date(`${ymd}T00:00:00Z`);
   const offsetMin = cairoOffsetMinutes(guess);
   const corrected = new Date(guess.getTime() - offsetMin * 60_000);
@@ -56,8 +59,7 @@ function cairoStartOfDay(date) {
 
 function cairoOffsetMinutes(date) {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: CAIRO_TZ,
-    timeZoneName: 'shortOffset',
+    timeZone: CAIRO_TZ, timeZoneName: 'shortOffset',
   }).formatToParts(date);
   const tzPart = parts.find((p) => p.type === 'timeZoneName')?.value || 'GMT+2';
   const m = tzPart.match(/GMT([+-]\d+)(?::(\d+))?/);
@@ -83,7 +85,6 @@ export function resolveWindow(period, customFrom, customTo) {
     case 'custom': {
       if (!customFrom || !customTo) throw new Error('custom period needs from and to');
       const from = cairoStartOfDay(new Date(customFrom));
-      // End of the "to" day, Cairo-local: start of the next day minus 1 second.
       const to = cairoStartOfDay(new Date(new Date(customTo).getTime() + 86400_000)) - 1;
       return { fromUnix: from, toUnix: to, label: `${customFrom} → ${customTo}` };
     }
@@ -92,37 +93,50 @@ export function resolveWindow(period, customFrom, customTo) {
   }
 }
 
-function bucketOf(order) {
-  const fs = String(order.fulfillmentStatus || '').toUpperCase();
-  if (fs === DELIVERED_STATUS) return 'delivered';
-  if (UNDELIVERED_STATUSES.has(fs)) return 'undelivered';
-  return 'in_transit';
+// The live "in transit right now" lookback is fixed, independent of the period selector.
+export function inTransitLookbackWindow() {
+  const nowUnix = Math.floor(Date.now() / 1000);
+  return { fromUnix: nowUnix - IN_TRANSIT_LOOKBACK_DAYS * 86400, toUnix: nowUnix };
 }
 
-// The main entry point: orders (already filtered to the window by the caller's
-// Ecwid query) → every number the dashboard shows.
-export function computeMetrics(orders) {
-  const buckets = { delivered: [], undelivered: [], in_transit: [] };
-  for (const o of orders) buckets[bucketOf(o)].push(o);
+function fulfillment(order) {
+  return String(order.fulfillmentStatus || '').toUpperCase();
+}
+
+// --- Main entry point ---
+// resolvedOrders: Ecwid orders fetched by updatedFrom/updatedTo for the selected window
+//   (caller should fetch broadly; this function does the resolved-status filtering).
+// inTransitOrders: Ecwid orders fetched by the fixed lookback window (any date field),
+//   not filtered by period — this function filters down to currently-unresolved ones.
+// placedCount: count of orders placed in the selected window (createdFrom/To), for the
+//   separate "placed" context stat — pass the raw count, no further processing needed.
+export function computeMetrics(resolvedOrdersRaw, inTransitOrdersRaw, placedCount) {
+  const resolvedOrders = resolvedOrdersRaw.filter((o) => RESOLVED_STATUSES.has(fulfillment(o)));
+  const delivered = resolvedOrders.filter((o) => fulfillment(o) === DELIVERED_STATUS);
+  const undelivered = resolvedOrders.filter((o) => UNDELIVERED_STATUSES.has(fulfillment(o)));
+  const inTransit = inTransitOrdersRaw.filter((o) => !RESOLVED_STATUSES.has(fulfillment(o)));
 
   const sumTotal = (list) => list.reduce((s, o) => s + (Number(o.total) || 0), 0);
-  const currency = orders.find((o) => o.currency)?.currency || 'EGP';
+  const currency =
+    delivered.find((o) => o.currency)?.currency ||
+    undelivered.find((o) => o.currency)?.currency ||
+    inTransit.find((o) => o.currency)?.currency ||
+    'EGP';
 
-  const deliveredCount = buckets.delivered.length;
-  const undeliveredCount = buckets.undelivered.length;
-  const inTransitCount = buckets.in_transit.length;
+  const deliveredCount = delivered.length;
+  const undeliveredCount = undelivered.length;
+  const inTransitCount = inTransit.length;
   const resolvedCount = deliveredCount + undeliveredCount;
 
-  const earnings = sumTotal(buckets.delivered);
-  const cashPending = sumTotal(buckets.in_transit);
+  const earnings = sumTotal(delivered);
+  const cashPending = sumTotal(inTransit);
   const aov = deliveredCount ? earnings / deliveredCount : 0;
-  const deliveryRate = resolvedCount ? deliveredCount / resolvedCount : null; // null = nothing resolved yet
+  const deliveryRate = resolvedCount ? deliveredCount / resolvedCount : null;
 
-  // Top products & sizes — ranked by units sold, counted from delivered orders only
-  // (an order still in transit hasn't "sold" anything yet in the COD sense).
+  // Top products & sizes — ranked by units sold, from delivered orders in this window.
   const productTally = new Map();
   const categoryTotals = new Map();
-  for (const o of buckets.delivered) {
+  for (const o of delivered) {
     const items = Array.isArray(o.items) ? o.items : [];
     for (const it of items) {
       const opts = Array.isArray(it.selectedOptions) ? it.selectedOptions : [];
@@ -144,21 +158,17 @@ export function computeMetrics(orders) {
   const categoryTotalSum = [...categoryTotals.values()].reduce((s, v) => s + v, 0) || 1;
   const categorySplit = [...categoryTotals.entries()]
     .sort((a, b) => b[1] - a[1])
-    .map(([category, revenue]) => ({
-      category,
-      revenue,
-      share: revenue / categoryTotalSum,
-    }));
+    .map(([category, revenue]) => ({ category, revenue, share: revenue / categoryTotalSum }));
 
   return {
     currency,
     counts: {
       delivered: deliveredCount,
       undelivered: undeliveredCount,
-      inTransit: inTransitCount,
-      totalPlaced: orders.length,
+      inTransit: inTransitCount, // live, not period-filtered
+      placed: placedCount,       // separate context stat, placement-date anchored
     },
-    deliveryRate, // 0..1 or null
+    deliveryRate,
     earnings,
     aov,
     cash: { collected: earnings, pending: cashPending },

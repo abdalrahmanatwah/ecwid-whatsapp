@@ -41,21 +41,26 @@ export async function updateOrder(orderId, body) {
   return res.json(); // { updateCount: 1 }
 }
 
-// GET /orders?createdFrom=...&createdTo=... — orders placed in a window (UNIX seconds).
-// createdTo is optional (omit for "from X to now"). Pages through results so a
-// busy window never gets truncated at 100 orders.
-export async function searchOrders(createdFromUnix, createdToUnix) {
+// GET /orders?createdFrom=...&createdTo=... (or updatedFrom/updatedTo) — orders in a
+// window (UNIX seconds). toUnix is optional (omit for "from X to now"). dateField picks
+// which Ecwid date filter to use: 'created' = order placement date (default, used by the
+// poller), 'updated' = last status change date (used by the dashboard to find orders that
+// RESOLVED — delivered/returned/cancelled — within a window, regardless of when they were
+// originally placed). Pages through results so a busy window never gets truncated at 100.
+export async function searchOrders(fromUnix, toUnix, dateField = 'created') {
+  const fromKey = dateField === 'updated' ? 'updatedFrom' : 'createdFrom';
+  const toKey = dateField === 'updated' ? 'updatedTo' : 'createdTo';
   const limit = 100;
   let offset = 0;
   const all = [];
   while (true) {
     const params = new URLSearchParams({
-      createdFrom: String(createdFromUnix),
+      [fromKey]: String(fromUnix),
       limit: String(limit),
       offset: String(offset),
       sortBy: 'DATE_ASC',
     });
-    if (createdToUnix) params.set('createdTo', String(createdToUnix));
+    if (toUnix) params.set(toKey, String(toUnix));
     const res = await fetch(`${BASE}/orders?${params.toString()}`, { headers: authHeaders() });
     if (!res.ok) {
       const text = await res.text().catch(() => '');

@@ -201,6 +201,16 @@
     padding: 16px;
     margin-bottom: 10px;
   }
+  section.board.live {
+    border-color: rgba(143, 163, 153, 0.35);
+    border-style: dashed;
+  }
+  .live-tag {
+    text-transform: none;
+    letter-spacing: 0.02em;
+    color: var(--mist);
+    font-size: 10px;
+  }
   .board-title {
     font-family: var(--font-mono);
     font-size: 10px;
@@ -429,16 +439,14 @@
   function render(data) {
     const c = data.counts;
     const resolved = c.delivered + c.undelivered;
-    const deliveredPct = resolved ? c.delivered / resolved : 0;
-    const undeliveredPct = resolved ? c.undelivered / resolved : 0;
-    const maxRowCount = Math.max(c.delivered, c.undelivered, c.inTransit, 1);
+    const maxRowCount = Math.max(c.delivered, c.undelivered, 1);
 
     let html = '';
 
-    // Hero: earnings + delivery rate
+    // Hero: earnings + delivery rate — both resolution-anchored to the selected period
     html += '<div class="hero">';
     html += '  <div class="hero-card">';
-    html += '    <div class="hero-label">Earnings</div>';
+    html += '    <div class="hero-label">Earnings · ' + escapeHtml(data.window.label) + '</div>';
     html += '    <div class="hero-value ball">' + fmtMoney(data.earnings, data.currency) + '</div>';
     html += '    <div class="hero-sub">' + c.delivered + ' delivered order' + (c.delivered === 1 ? '' : 's') + '</div>';
     html += '  </div>';
@@ -449,21 +457,26 @@
     html += '  </div>';
     html += '</div>';
 
-    // Status board
+    // Status board — resolved THIS PERIOD (delivered/returned/cancelled by resolution date)
     html += '<section class="board">';
-    html += '  <div class="board-title"><span>Status board</span><span>' + c.totalPlaced + ' placed</span></div>';
+    html += '  <div class="board-title"><span>Resolved this period</span><span>' + c.placed + ' placed</span></div>';
     html += row('Delivered', c.delivered, maxRowCount, 'delivered');
-    html += row('In transit', c.inTransit, maxRowCount, 'transit');
     html += row('Undelivered', c.undelivered, maxRowCount, 'undelivered');
     html += '</section>';
 
-    // Cash
-    html += '<section class="board">';
-    html += '  <div class="board-title"><span>Cash</span></div>';
+    // Right now — live snapshot, NOT limited by the period tabs above
+    html += '<section class="board live">';
+    html += '  <div class="board-title"><span>Right now</span><span class="live-tag">● not period-limited</span></div>';
     html += '  <div class="two-up">';
-    html += '    <div class="stat"><span class="stat-label">Collected</span><span class="stat-value" style="color: var(--ball);">' + fmtMoney(data.cash.collected, data.currency) + '</span></div>';
-    html += '    <div class="stat"><span class="stat-label">Pending</span><span class="stat-value">' + fmtMoney(data.cash.pending, data.currency) + '</span></div>';
+    html += '    <div class="stat"><span class="stat-label">In transit</span><span class="stat-value">' + c.inTransit + ' order' + (c.inTransit === 1 ? '' : 's') + '</span></div>';
+    html += '    <div class="stat"><span class="stat-label">Cash pending</span><span class="stat-value">' + fmtMoney(data.cash.pending, data.currency) + '</span></div>';
     html += '  </div>';
+    html += '</section>';
+
+    // Cash collected — this period
+    html += '<section class="board">';
+    html += '  <div class="board-title"><span>Cash collected · ' + escapeHtml(data.window.label) + '</span></div>';
+    html += '  <div class="stat" style="padding: 2px 0;"><span class="stat-label">Collected</span><span class="stat-value" style="color: var(--ball); font-size: 17px;">' + fmtMoney(data.cash.collected, data.currency) + '</span></div>';
     html += '</section>';
 
     // AOV + Top products
