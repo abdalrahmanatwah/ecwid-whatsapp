@@ -96,6 +96,35 @@ ngrok http 3000      # use the https URL for the WhatsApp webhook
 
 ---
 
+## Dashboard
+
+`/dashboard` shows Bosta delivery rate, earnings, undelivered orders, cash collected vs
+pending, average order value, top products, and the Tennis & Padel / Running & Fitness
+revenue split — for Today, Last 7/14/30 days, or a custom date range.
+
+It reads straight from Ecwid (no separate database): orders already carry the delivered /
+returned / cancelled status that the tracking bridge writes back onto them, so the numbers
+are always live and never drift out of sync.
+
+**Definitions** (so the numbers mean what you'd expect):
+- A day "starts" at midnight **Cairo time**, not server time.
+- *Earnings* and *cash collected* only count **delivered** orders — COD cash only really
+  lands once the courier actually hands it over.
+- *Undelivered* = returned or cancelled, **resolved** within the window. Orders still moving
+  (Processing / Shipped, tracking not yet resolved) are shown separately as "in transit" and
+  don't count against the delivery rate — they just haven't had time to resolve yet.
+- *Top products* and the *category split* are built from delivered orders only.
+- The category split is keyword-based (`tennis`/`padel` → Tennis & Padel,
+  `running`/`fitness`/`training`/`gym` → Running & Fitness, everything else → Other) since
+  Ecwid's order API doesn't carry a category field. Edit `CATEGORY_KEYWORDS` near the top of
+  `src/metrics.js` if a product lands in the wrong bucket.
+
+It's protected by a username/password (browser will prompt) — set `DASHBOARD_PASSWORD`
+before deploying, or the route refuses to serve anything rather than going public by
+accident.
+
+---
+
 ## Configuration reference
 
 | Variable | Meaning |
@@ -111,6 +140,8 @@ ngrok http 3000      # use the https URL for the WhatsApp webhook
 | `WHATSAPP_TEMPLATE_NAME` / `_LANG` | Your approved template |
 | `DEFAULT_COUNTRY_CODE` | For phone normalization. Egypt = `20` |
 | `MERCHANT_WHATSAPP` | Optional: get pinged on each reply |
+| `DASHBOARD_USER` | Dashboard login username (default `499k`) |
+| `DASHBOARD_PASSWORD` | Dashboard login password — **required**, no default |
 
 ---
 

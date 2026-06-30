@@ -41,17 +41,22 @@ export async function updateOrder(orderId, body) {
   return res.json(); // { updateCount: 1 }
 }
 
-// GET /orders?createdFrom=... — orders created at/after a UNIX timestamp (seconds).
-// Pages through results so we never miss an order in a busy minute.
-export async function searchOrders(createdFromUnix) {
+// GET /orders?createdFrom=...&createdTo=... — orders placed in a window (UNIX seconds).
+// createdTo is optional (omit for "from X to now"). Pages through results so a
+// busy window never gets truncated at 100 orders.
+export async function searchOrders(createdFromUnix, createdToUnix) {
   const limit = 100;
   let offset = 0;
   const all = [];
   while (true) {
-    const url =
-      `${BASE}/orders?createdFrom=${createdFromUnix}&limit=${limit}&offset=${offset}` +
-      `&sortBy=DATE_ASC`;
-    const res = await fetch(url, { headers: authHeaders() });
+    const params = new URLSearchParams({
+      createdFrom: String(createdFromUnix),
+      limit: String(limit),
+      offset: String(offset),
+      sortBy: 'DATE_ASC',
+    });
+    if (createdToUnix) params.set('createdTo', String(createdToUnix));
+    const res = await fetch(`${BASE}/orders?${params.toString()}`, { headers: authHeaders() });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
       throw new Error(`Ecwid searchOrders failed: ${res.status} ${text}`);

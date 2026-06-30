@@ -1,11 +1,16 @@
 import 'dotenv/config';
 import express from 'express';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { updateOrder } from './ecwid.js';
 import { sendText } from './whatsapp.js';
 import { store } from './store.js';
 import { startPolling } from './poller.js';
 import { notifyMerchant } from './notify.js';
+import { dashboardRouter } from './dashboard.js';
+import { requireAuth } from './auth.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json());
 
@@ -24,6 +29,15 @@ const CANCEL_MESSAGE =
 
 // Health check
 app.get('/', (_req, res) => res.send('Ecwid → WhatsApp order confirmation: running'));
+
+/* ------------------------------------------------------------------ *
+ * Dashboard: Bosta delivery rate, earnings, undelivered orders, etc.  *
+ * Both the page and its API are behind Basic Auth (DASHBOARD_PASSWORD)*
+ * ------------------------------------------------------------------ */
+app.use('/dashboard', requireAuth, dashboardRouter);
+app.get('/dashboard', requireAuth, (_req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'dashboard.html'));
+});
 
 /* ------------------------------------------------------------------ *
  * WhatsApp webhook verification (Meta calls this once during setup)   *

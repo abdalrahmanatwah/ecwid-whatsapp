@@ -10,7 +10,7 @@
 import { getProduct } from './ecwid.js';
 import { sendTemplate } from './whatsapp.js';
 import { store } from './store.js';
-import { normalizePhone } from './notify.js';
+import { normalizePhone } from './phone.js';
 
 const STORE_ID   = process.env.ECWID_STORE_ID;
 const TOKEN      = process.env.ECWID_API_TOKEN;

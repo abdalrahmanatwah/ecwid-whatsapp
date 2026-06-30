@@ -41,3 +41,8 @@ services:
         sync: false
       - key: MERCHANT_WHATSAPP
         sync: false
+      # Dashboard (Bosta delivery rate, earnings, etc. — at /dashboard):
+      - key: DASHBOARD_USER
+        value: 499k
+      - key: DASHBOARD_PASSWORD
+        sync: false

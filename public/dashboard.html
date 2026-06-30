@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>499K — Dispatch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --night: #16221F;
+    --surface: #1F2E2A;
+    --surface-2: #263B33;
+    --ball: #C8E25C;
+    --ball-dim: #8FA84A;
+    --red: #F0553D;
+    --chalk: #F2EFE6;
+    --mist: #8FA399;
+    --hairline: rgba(242, 239, 230, 0.10);
+    --font-display: 'Big Shoulders Display', sans-serif;
+    --font-body: 'IBM Plex Sans', sans-serif;
+    --font-mono: 'IBM Plex Mono', monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--night);
+    background-image:
+      radial-gradient(ellipse 800px 400px at 50% -10%, rgba(200,226,92,0.06), transparent);
+    color: var(--chalk);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+
+  .wrap {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 20px 16px 60px;
+  }
+
+  /* ---------- header ---------- */
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 18px;
+  }
+  .brand {
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 22px;
+    letter-spacing: 0.02em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .brand .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ball);
+    box-shadow: 0 0 0 3px rgba(200,226,92,0.18);
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .brand .dot { animation: pulse 2.4s ease-in-out infinite; }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .brand .sub {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--mist);
+    letter-spacing: 0.08em;
+    font-weight: 400;
+  }
+  .as-of {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--mist);
+    text-align: right;
+  }
+
+  /* ---------- tabs ---------- */
+  .tabs {
+    display: flex;
+    gap: 2px;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    padding: 3px;
+    overflow-x: auto;
+    margin-bottom: 14px;
+  }
+  .tab {
+    flex: 1;
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--mist);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    padding: 9px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, color 0.15s;
+  }
+  .tab:hover { color: var(--chalk); }
+  .tab.active { background: var(--ball); color: var(--night); font-weight: 600; }
+  .tab:focus-visible { outline: 2px solid var(--ball); outline-offset: 2px; }
+
+  .custom-range {
+    display: none;
+    gap: 8px;
+    align-items: center;
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .custom-range.show { display: flex; }
+  .custom-range input[type="date"] {
+    background: var(--surface-2);
+    border: 1px solid var(--hairline);
+    color: var(--chalk);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 7px 8px;
+    border-radius: 5px;
+  }
+  .custom-range button {
+    appearance: none;
+    border: none;
+    background: var(--ball);
+    color: var(--night);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 600;
+    padding: 8px 14px;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  .custom-range button:focus-visible { outline: 2px solid var(--chalk); outline-offset: 2px; }
+
+  /* ---------- hero ---------- */
+  .hero {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .hero-card {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    padding: 16px 16px 14px;
+  }
+  .hero-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--mist);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .hero-value {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(28px, 7vw, 38px);
+    line-height: 1;
+    letter-spacing: 0.01em;
+  }
+  .hero-value.ball { color: var(--ball); }
+  .hero-value .unit {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--mist);
+    margin-left: 4px;
+  }
+  .hero-sub {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--mist);
+    margin-top: 4px;
+  }
+
+  /* ---------- generic section ---------- */
+  section.board {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 10px;
+  }
+  .board-title {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--mist);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  /* ---------- status rows ---------- */
+  .row {
+    display: grid;
+    grid-template-columns: 110px 1fr 60px;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 0;
+  }
+  .row + .row { border-top: 1px solid var(--hairline); }
+  .row-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--chalk);
+  }
+  .row-bar-track {
+    height: 7px;
+    background: var(--surface-2);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .row-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .row-bar-fill.delivered { background: var(--ball); }
+  .row-bar-fill.undelivered { background: var(--red); }
+  .row-bar-fill.transit { background: var(--mist); opacity: 0.5; }
+  .row-count {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    text-align: right;
+  }
+
+  /* ---------- two-up ---------- */
+  .two-up {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  @media (max-width: 480px) {
+    .two-up { grid-template-columns: 1fr; }
+  }
+  .stat {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 6px 0;
+  }
+  .stat-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--mist);
+  }
+  .stat-value {
+    font-family: var(--font-mono);
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  /* ---------- products list ---------- */
+  .product-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 0;
+    font-size: 12px;
+  }
+  .product-row + .product-row { border-top: 1px solid var(--hairline); }
+  .product-name { color: var(--chalk); }
+  .product-units { font-family: var(--font-mono); color: var(--mist); }
+
+  /* ---------- category split ---------- */
+  .cat-row { margin-bottom: 10px; }
+  .cat-row:last-child { margin-bottom: 0; }
+  .cat-head {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    margin-bottom: 5px;
+  }
+  .cat-head .pct { font-family: var(--font-mono); color: var(--mist); }
+
+  /* ---------- states ---------- */
+  .state-msg {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--mist);
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  .state-msg.error { color: var(--red); }
+
+  .empty-note {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--mist);
+    text-align: center;
+    padding: 10px 0 2px;
+  }
+
+  ::selection { background: var(--ball); color: var(--night); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <span class="dot"></span>
+        <span>499K</span>
+        <span class="sub">DISPATCH</span>
+      </div>
+      <div class="as-of" id="asOf">—</div>
+    </header>
+
+    <div class="tabs" role="tablist" aria-label="Time period">
+      <button class="tab active" data-period="today" role="tab" aria-selected="true">TODAY</button>
+      <button class="tab" data-period="7d" role="tab" aria-selected="false">7D</button>
+      <button class="tab" data-period="14d" role="tab" aria-selected="false">14D</button>
+      <button class="tab" data-period="30d" role="tab" aria-selected="false">30D</button>
+      <button class="tab" data-period="custom" role="tab" aria-selected="false">CUSTOM</button>
+    </div>
+
+    <div class="custom-range" id="customRange">
+      <input type="date" id="fromDate">
+      <span style="color: var(--mist); font-family: var(--font-mono); font-size: 12px;">→</span>
+      <input type="date" id="toDate">
+      <button id="applyCustom">Apply</button>
+    </div>
+
+    <div id="content">
+      <div class="state-msg">Loading today's numbers…</div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  const content = document.getElementById('content');
+  const asOf = document.getElementById('asOf');
+  const tabs = document.querySelectorAll('.tab');
+  const customRange = document.getElementById('customRange');
+  const fromDate = document.getElementById('fromDate');
+  const toDate = document.getElementById('toDate');
+  const applyCustom = document.getElementById('applyCustom');
+
+  const PERIOD_LABELS = { today: "today's numbers", '7d': 'last 7 days', '14d': 'last 14 days', '30d': 'last 30 days' };
+  let currentPeriod = 'today';
+
+  // Default custom range to the last 7 days, just so the inputs aren't empty.
+  const today = new Date();
+  const weekAgo = new Date(today.getTime() - 6 * 86400000);
+  toDate.value = today.toISOString().slice(0, 10);
+  fromDate.value = weekAgo.toISOString().slice(0, 10);
+
+  function fmtMoney(n, currency) {
+    const rounded = Math.round(n);
+    return rounded.toLocaleString('en-US') + ' ' + (currency || 'EGP');
+  }
+  function fmtPct(p) {
+    if (p === null || p === undefined) return '—';
+    return Math.round(p * 100) + '%';
+  }
+  function fmtTime(unixSec) {
+    return new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const period = tab.dataset.period;
+      tabs.forEach((t) => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+      tab.classList.add('active');
+      tab.setAttribute('aria-selected', 'true');
+      currentPeriod = period;
+      if (period === 'custom') {
+        customRange.classList.add('show');
+        return; // wait for Apply
+      }
+      customRange.classList.remove('show');
+      load(period);
+    });
+  });
+
+  applyCustom.addEventListener('click', () => {
+    if (!fromDate.value || !toDate.value) return;
+    load('custom', fromDate.value, toDate.value);
+  });
+
+  async function load(period, from, to) {
+    content.innerHTML = '<div class="state-msg">Loading…</div>';
+    const params = new URLSearchParams({ period });
+    if (from) params.set('from', from);
+    if (to) params.set('to', to);
+
+    try {
+      const res = await fetch('/dashboard/api/metrics?' + params.toString());
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || ('HTTP ' + res.status));
+      }
+      const data = await res.json();
+      render(data);
+      asOf.textContent = 'as of ' + fmtTime();
+    } catch (err) {
+      content.innerHTML = '<div class="state-msg error">Could not load: ' + escapeHtml(err.message) + '</div>';
+    }
+  }
+
+  function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function render(data) {
+    const c = data.counts;
+    const resolved = c.delivered + c.undelivered;
+    const deliveredPct = resolved ? c.delivered / resolved : 0;
+    const undeliveredPct = resolved ? c.undelivered / resolved : 0;
+    const maxRowCount = Math.max(c.delivered, c.undelivered, c.inTransit, 1);
+
+    let html = '';
+
+    // Hero: earnings + delivery rate
+    html += '<div class="hero">';
+    html += '  <div class="hero-card">';
+    html += '    <div class="hero-label">Earnings</div>';
+    html += '    <div class="hero-value ball">' + fmtMoney(data.earnings, data.currency) + '</div>';
+    html += '    <div class="hero-sub">' + c.delivered + ' delivered order' + (c.delivered === 1 ? '' : 's') + '</div>';
+    html += '  </div>';
+    html += '  <div class="hero-card">';
+    html += '    <div class="hero-label">Delivery rate</div>';
+    html += '    <div class="hero-value">' + fmtPct(data.deliveryRate) + '</div>';
+    html += '    <div class="hero-sub">' + (resolved ? resolved + ' resolved' : 'nothing resolved yet') + '</div>';
+    html += '  </div>';
+    html += '</div>';
+
+    // Status board
+    html += '<section class="board">';
+    html += '  <div class="board-title"><span>Status board</span><span>' + c.totalPlaced + ' placed</span></div>';
+    html += row('Delivered', c.delivered, maxRowCount, 'delivered');
+    html += row('In transit', c.inTransit, maxRowCount, 'transit');
+    html += row('Undelivered', c.undelivered, maxRowCount, 'undelivered');
+    html += '</section>';
+
+    // Cash
+    html += '<section class="board">';
+    html += '  <div class="board-title"><span>Cash</span></div>';
+    html += '  <div class="two-up">';
+    html += '    <div class="stat"><span class="stat-label">Collected</span><span class="stat-value" style="color: var(--ball);">' + fmtMoney(data.cash.collected, data.currency) + '</span></div>';
+    html += '    <div class="stat"><span class="stat-label">Pending</span><span class="stat-value">' + fmtMoney(data.cash.pending, data.currency) + '</span></div>';
+    html += '  </div>';
+    html += '</section>';
+
+    // AOV + Top products
+    html += '<section class="board">';
+    html += '  <div class="board-title"><span>Average order value</span><span>' + fmtMoney(data.aov, data.currency) + '</span></div>';
+    if (data.topProducts.length) {
+      html += '  <div style="margin-top: 4px;">';
+      data.topProducts.forEach((p) => {
+        html += '<div class="product-row"><span class="product-name">' + escapeHtml(p.name) + '</span><span class="product-units">×' + p.units + '</span></div>';
+      });
+      html += '  </div>';
+    } else {
+      html += '  <div class="empty-note">No delivered orders in this window yet.</div>';
+    }
+    html += '</section>';
+
+    // Category split
+    if (data.categorySplit.length) {
+      html += '<section class="board">';
+      html += '  <div class="board-title"><span>Category split</span></div>';
+      data.categorySplit.forEach((cat) => {
+        html += '<div class="cat-row">';
+        html += '  <div class="cat-head"><span>' + escapeHtml(cat.category) + '</span><span class="pct">' + fmtPct(cat.share) + '</span></div>';
+        html += '  <div class="row-bar-track"><div class="row-bar-fill delivered" data-target="' + Math.round(cat.share * 100) + '%" style="width:0%"></div></div>';
+        html += '</div>';
+      });
+      html += '</section>';
+    }
+
+    content.innerHTML = html;
+
+    // Animate bars in after paint — or set them instantly if the person prefers reduced motion.
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const bars = document.querySelectorAll('.row-bar-fill[data-target]');
+    if (reduceMotion) {
+      bars.forEach((el) => { el.style.transition = 'none'; el.style.width = el.dataset.target; });
+    } else {
+      requestAnimationFrame(() => {
+        bars.forEach((el) => { el.style.width = el.dataset.target; });
+      });
+    }
+  }
+
+  function row(label, count, maxCount, kind) {
+    const widthPct = Math.max(2, Math.round((count / maxCount) * 100));
+    return (
+      '<div class="row">' +
+      '  <div class="row-label">' + label.toUpperCase() + '</div>' +
+      '  <div class="row-bar-track"><div class="row-bar-fill ' + kind + '" data-target="' + widthPct + '%" style="width:0%"></div></div>' +
+      '  <div class="row-count">' + count + '</div>' +
+      '</div>'
+    );
+  }
+
+  load('today');
+})();
+</script>
+</body>
+</html>
