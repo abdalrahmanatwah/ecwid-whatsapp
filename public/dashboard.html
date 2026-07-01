@@ -807,15 +807,10 @@
   async function loadQP() {
     const qpContent = document.getElementById('qpContent');
     try {
-      const [summaryRes, ordersRes] = await Promise.all([
-        fetch('/api/qp/summary'),
-        fetch('/api/qp/orders'),
-      ]);
-      if (!summaryRes.ok) throw new Error('summary HTTP ' + summaryRes.status);
-      if (!ordersRes.ok) throw new Error('orders HTTP ' + ordersRes.status);
-      const summary = await summaryRes.json();
-      const orders = await ordersRes.json();
-      renderQP(summary, orders);
+      const res = await fetch('/api/qp/orders');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      renderQP(data);
     } catch (err) {
       qpContent.innerHTML = '<div class="courier-card"><div class="state-msg error">QP Express: could not load (' + escapeHtml(err.message) + ')</div></div>';
     }
@@ -833,25 +828,20 @@
     }
   }
 
-  function renderQP(summary, ordersData) {
+  function renderQP(data) {
     const qpContent = document.getElementById('qpContent');
-    const orders = (ordersData.orders || []).slice(0, 50);
-    const s = summary.by_status || {};
+    const orders = (data.orders || []).slice(0, 50);
+
+    // Count statuses across ONLY the visible last-50 orders (not the whole store).
+    const counts = { Delivered: 0, Undelivered: 0, Hold: 0, 'Out for Delivery': 0, Pending: 0 };
+    orders.forEach((o) => {
+      if (counts[o.status] !== undefined) counts[o.status]++;
+    });
 
     let html = '<div class="courier-card">';
     html += '  <div class="courier-title">';
     html += '    <span class="name"><span class="dot"></span>QP Express</span>';
-    html += '    <span class="updated">' + (summary.total_orders || 0) + ' total orders</span>';
-    html += '  </div>';
-
-    // Status counts summary — all-time, straight from the current status of
-    // every order in the store.
-    html += '  <div class="qp-counts">';
-    html += qpCountBox('Delivered', s['Delivered'] || 0, 'qp-pill-delivered');
-    html += qpCountBox('Undelivered', s['Undelivered'] || 0, 'qp-pill-undelivered');
-    html += qpCountBox('Hold', s['Hold'] || 0, 'qp-pill-hold');
-    html += qpCountBox('Out for Delivery', s['Out for Delivery'] || 0, 'qp-pill-transit');
-    html += qpCountBox('Pending', s['Pending'] || 0, 'qp-pill-pending');
+    html += '    <span class="updated">last ' + orders.length + ' orders</span>';
     html += '  </div>';
 
     if (orders.length === 0) {
@@ -860,6 +850,15 @@
       qpContent.innerHTML = html;
       return;
     }
+
+    // Status counts summary — for the last 50 orders shown below.
+    html += '  <div class="qp-counts">';
+    html += qpCountBox('Delivered', counts['Delivered'], 'qp-pill-delivered');
+    html += qpCountBox('Undelivered', counts['Undelivered'], 'qp-pill-undelivered');
+    html += qpCountBox('Hold', counts['Hold'], 'qp-pill-hold');
+    html += qpCountBox('Out for Delivery', counts['Out for Delivery'], 'qp-pill-transit');
+    html += qpCountBox('Pending', counts['Pending'], 'qp-pill-pending');
+    html += '  </div>';
 
     // Divider + last-50 orders list
     html += '  <div class="board-title" style="margin-top:14px;"><span>Last ' + orders.length + ' orders</span></div>';
