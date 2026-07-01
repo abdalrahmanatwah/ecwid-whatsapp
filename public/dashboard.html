@@ -394,6 +394,33 @@
   .qp-hero-value.amber { color: var(--amber); }
   .row-bar-fill.qp-hold { background: var(--amber); }
   .row-bar-fill.qp-pending { background: var(--mist); opacity: 0.5; }
+
+  /* ---------- combined totals (Bosta + QP), sits above the tabs ---------- */
+  .combined-card {
+    background: var(--surface-2);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 14px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .combined-row { display: flex; flex-direction: column; gap: 3px; }
+  .combined-total {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 19px;
+    color: var(--chalk);
+  }
+  .combined-breakdown {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--mist);
+  }
+  @media (max-width: 480px) {
+    .combined-card { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
@@ -407,8 +434,11 @@
       <div class="as-of" id="asOf">—</div>
     </header>
 
+    <div id="combinedTotals"></div>
+
     <div class="tabs" role="tablist" aria-label="Time period">
       <button class="tab active" data-period="today" role="tab" aria-selected="true">TODAY</button>
+      <button class="tab" data-period="yesterday" role="tab" aria-selected="false">YESTERDAY</button>
       <button class="tab" data-period="7d" role="tab" aria-selected="false">7D</button>
       <button class="tab" data-period="14d" role="tab" aria-selected="false">14D</button>
       <button class="tab" data-period="30d" role="tab" aria-selected="false">30D</button>
@@ -445,8 +475,40 @@
   const toDate = document.getElementById('toDate');
   const applyCustom = document.getElementById('applyCustom');
 
-  const PERIOD_LABELS = { today: "today's numbers", '7d': 'last 7 days', '14d': 'last 14 days', '30d': 'last 30 days' };
+  const PERIOD_LABELS = { today: "today's numbers", yesterday: "yesterday's numbers", '7d': 'last 7 days', '14d': 'last 14 days', '30d': 'last 30 days' };
   let currentPeriod = 'today';
+
+  // Computes actual from/to dates for a named period. Bosta's own endpoint
+  // resolves period names server-side, but the QP endpoint takes explicit
+  // dates, so we need this client-side too, to keep both sections in sync
+  // on the exact same date range.
+  function resolvePeriodDates(period, customFrom, customTo) {
+    const now = new Date();
+    const toISO = (d) => d.toISOString().slice(0, 10);
+    if (period === 'today') {
+      return { from: toISO(now), to: toISO(now) };
+    }
+    if (period === 'yesterday') {
+      const y = new Date(now.getTime() - 86400000);
+      return { from: toISO(y), to: toISO(y) };
+    }
+    if (period === '7d') {
+      const start = new Date(now.getTime() - 6 * 86400000);
+      return { from: toISO(start), to: toISO(now) };
+    }
+    if (period === '14d') {
+      const start = new Date(now.getTime() - 13 * 86400000);
+      return { from: toISO(start), to: toISO(now) };
+    }
+    if (period === '30d') {
+      const start = new Date(now.getTime() - 29 * 86400000);
+      return { from: toISO(start), to: toISO(now) };
+    }
+    if (period === 'custom') {
+      return { from: customFrom, to: customTo };
+    }
+    return { from: toISO(now), to: toISO(now) };
+  }
 
   // Default custom range to the last 7 days, just so the inputs aren't empty.
   const today = new Date();
@@ -466,6 +528,9 @@
     return new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
   }
 
+  let lastBostaData = null;
+  let lastQPData = null;
+
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => {
       const period = tab.dataset.period;
@@ -478,14 +543,27 @@
         return; // wait for Apply
       }
       customRange.classList.remove('show');
-      load(period);
+      const { from, to } = resolvePeriodDates(period);
+      loadBoth(period, from, to);
     });
   });
 
   applyCustom.addEventListener('click', () => {
     if (!fromDate.value || !toDate.value) return;
-    load('custom', fromDate.value, toDate.value);
+    loadBoth('custom', fromDate.value, toDate.value);
   });
+
+  // Runs Bosta and QP loads together, then renders the combined-totals
+  // strip once both have resolved (independently — one failing doesn't
+  // block the other from rendering its own section).
+  async function loadBoth(period, from, to) {
+    document.getElementById('combinedTotals').innerHTML = '';
+    await Promise.allSettled([
+      load(period, from, to),
+      loadQP(from, to),
+    ]);
+    renderCombinedTotals();
+  }
 
   async function load(period, from, to) {
     content.innerHTML = '<div class="state-msg">Loading…</div>';
@@ -500,11 +578,43 @@
         throw new Error(body.error || ('HTTP ' + res.status));
       }
       const data = await res.json();
+      lastBostaData = data;
       render(data);
       asOf.textContent = 'as of ' + fmtTime();
     } catch (err) {
+      lastBostaData = null;
       content.innerHTML = '<div class="state-msg error">Could not load: ' + escapeHtml(err.message) + '</div>';
     }
+  }
+
+  // Combined Bosta + QP totals, shown once both sections have loaded for
+  // the current period. Placed above the Bosta hero cards. If either side
+  // failed to load, we still show what we have rather than hiding the
+  // whole strip.
+  function renderCombinedTotals() {
+    const el = document.getElementById('combinedTotals');
+    if (!lastBostaData && !lastQPData) { el.innerHTML = ''; return; }
+
+    const bostaEarnings = lastBostaData ? lastBostaData.earnings : 0;
+    const bostaDelivered = lastBostaData ? lastBostaData.counts.delivered : 0;
+    const qpEarnings = lastQPData ? parseFloat(lastQPData.period_cod_collected_egp) : 0;
+    const qpDelivered = lastQPData ? lastQPData.period_delivered_count : 0;
+    const currency = (lastBostaData && lastBostaData.currency) || 'EGP';
+
+    const totalEarnings = bostaEarnings + qpEarnings;
+    const totalDelivered = bostaDelivered + qpDelivered;
+
+    let html = '<div class="combined-card">';
+    html += '  <div class="combined-row">';
+    html += '    <div class="combined-total">' + fmtMoney(totalEarnings, currency) + '</div>';
+    html += '    <div class="combined-breakdown">' + fmtMoney(bostaEarnings, currency) + ' Bosta + ' + fmtMoney(qpEarnings, currency) + ' QP</div>';
+    html += '  </div>';
+    html += '  <div class="combined-row">';
+    html += '    <div class="combined-total">' + totalDelivered + ' delivered</div>';
+    html += '    <div class="combined-breakdown">' + bostaDelivered + ' Bosta + ' + qpDelivered + ' QP</div>';
+    html += '  </div>';
+    html += '</div>';
+    el.innerHTML = html;
   }
 
   function escapeHtml(s) {
@@ -608,18 +718,23 @@
     );
   }
 
-  load('today');
-  loadQP();
+  const initialDates = resolvePeriodDates('today');
+  loadBoth('today', initialDates.from, initialDates.to);
 
-  // ---------- QP Express section — independent snapshot, not period-scoped ----------
-  async function loadQP() {
+  // ---------- QP Express section — now period-scoped, matching Bosta's tabs ----------
+  async function loadQP(from, to) {
     const qpContent = document.getElementById('qpContent');
     try {
-      const res = await fetch('/api/qp/summary');
+      const params = new URLSearchParams();
+      if (from) params.set('from', from);
+      if (to) params.set('to', to);
+      const res = await fetch('/api/qp/summary?' + params.toString());
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
+      lastQPData = data;
       renderQP(data);
     } catch (err) {
+      lastQPData = null;
       qpContent.innerHTML = '<div class="courier-card"><div class="state-msg error">QP Express: could not load (' + escapeHtml(err.message) + ')</div></div>';
     }
   }
@@ -635,13 +750,16 @@
 
   function renderQP(data) {
     const qpContent = document.getElementById('qpContent');
+    // Status bars below the hero always reflect the LIVE full store (not
+    // period-limited) — this is the "current state of everything QP is
+    // tracking", same "Right now, not period-limited" idea Bosta uses.
     const s = data.by_status || {};
-    const delivered = s['Delivered'] || 0;
-    const undelivered = s['Undelivered'] || 0;
+    const liveDelivered = s['Delivered'] || 0;
+    const liveUndelivered = s['Undelivered'] || 0;
     const outForDelivery = s['Out for Delivery'] || 0;
     const pending = s['Pending'] || 0;
     const hold = s['Hold'] || 0;
-    const maxCount = Math.max(delivered, undelivered, outForDelivery, pending, hold, 1);
+    const maxCount = Math.max(liveDelivered, liveUndelivered, outForDelivery, pending, hold, 1);
 
     let html = '<div class="courier-card">';
     html += '  <div class="courier-title">';
@@ -656,16 +774,19 @@
       return;
     }
 
+    // Hero: period-scoped (resolution-date anchored, matches the active tab)
     html += '  <div class="qp-hero">';
-    html += '    <div><div class="hero-label">COD collected</div><div class="qp-hero-value amber">' + fmtMoney(data.total_cod_egp, 'EGP') + '</div></div>';
-    html += '    <div><div class="hero-label">Delivery rate</div><div class="qp-hero-value">' + (data.delivery_rate_percent !== null ? data.delivery_rate_percent + '%' : '—') + '</div></div>';
+    html += '    <div><div class="hero-label">COD collected · this period</div><div class="qp-hero-value amber">' + fmtMoney(data.period_cod_collected_egp, 'EGP') + '</div><div class="hero-sub">' + data.period_delivered_count + ' delivered this period</div></div>';
+    html += '    <div><div class="hero-label">Delivery rate · this period</div><div class="qp-hero-value">' + (data.period_delivery_rate_percent !== null ? data.period_delivery_rate_percent + '%' : '—') + '</div><div class="hero-sub">' + (data.period_resolved_count ? data.period_resolved_count + ' resolved' : 'nothing resolved yet') + '</div></div>';
     html += '  </div>';
 
-    html += row('Delivered', delivered, maxCount, 'delivered');
+    // Status bars: live snapshot, not period-limited — labeled clearly so it's not confused with the hero above
+    html += '  <div class="board-title" style="margin-top:2px;"><span>Right now — all orders</span><span class="live-tag">● not period-limited</span></div>';
+    html += row('Delivered', liveDelivered, maxCount, 'delivered');
     html += row('Out for delivery', outForDelivery, maxCount, 'qp-pending');
     html += row('Hold', hold, maxCount, 'qp-hold');
     html += row('Pending', pending, maxCount, 'qp-pending');
-    html += row('Undelivered', undelivered, maxCount, 'undelivered');
+    html += row('Undelivered', liveUndelivered, maxCount, 'undelivered');
 
     html += '  <div class="empty-note">' + data.total_orders + ' total orders in store</div>';
     html += '</div>';
