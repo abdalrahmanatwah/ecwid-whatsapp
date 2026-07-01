@@ -4,20 +4,18 @@
  * Handles the QP Express order-tracking data pipeline.
  * This is INTENTIONALLY separate from Bosta's tracking logic — QP has
  * its own status vocabulary, its own city list, and no direct API, so
- * mixing it into bosta.js/ecwid_tracking.js would create false equivalences.
+ * mixing it into ecwid.js/dashboard.js would create false equivalences.
  *
  * Data flow:
  *   [local Playwright script] --POST--> /webhooks/qp-orders --> stored here
  *   [dashboard]              --GET-->  /api/qp/orders        --> read from here
  *
  * Storage: flat JSON file on the persistent disk (/var/data), same pattern
- * already used elsewhere in this service (see STORE_FILE for Ecwid orders).
- * No new database needed for this volume of data (~tens to low hundreds
- * of rows per day).
+ * already used elsewhere in this service.
  */
 
-const fs = require('fs');
-const path = require('path');
+import fs from 'node:fs';
+import path from 'node:path';
 
 const QP_STORE_FILE = process.env.QP_STORE_FILE || '/var/data/qp_orders.json';
 const QP_INGEST_TOKEN = process.env.QP_INGEST_TOKEN; // shared secret, see note below
@@ -25,7 +23,7 @@ const QP_INGEST_TOKEN = process.env.QP_INGEST_TOKEN; // shared secret, see note 
 // QP's known status vocabulary (from the observed export). If QP ever adds
 // a new status we haven't seen, we store it as-is rather than dropping the
 // row — better to show an unmapped status on the dashboard than to lose data.
-const KNOWN_STATUSES = ['Pending', 'Out for Delivery', 'Delivered', 'Hold', 'Undelivered'];
+export const KNOWN_STATUSES = ['Pending', 'Out for Delivery', 'Delivered', 'Hold', 'Undelivered'];
 
 function loadOrders() {
   try {
@@ -54,7 +52,7 @@ function saveOrders(orders) {
  *   is date-filtered by default: an order not present today just means it
  *   wasn't in that particular pull, not that it vanished).
  */
-function mergeOrders(rows) {
+export function mergeOrders(rows) {
   const store = loadOrders();
   const now = new Date().toISOString();
   let added = 0;
@@ -110,15 +108,15 @@ function mergeOrders(rows) {
 }
 
 /**
- * Express route handlers — wire these up in server.js:
+ * Express route handlers — already wired into server.js:
  *
- *   const qpOrders = require('./qp_orders');
+ *   import * as qpOrders from './qp_orders.js';
  *   app.post('/webhooks/qp-orders', qpOrders.handleIngest);
  *   app.get('/api/qp/orders', qpOrders.handleList);
  *   app.get('/api/qp/summary', qpOrders.handleSummary);
  */
 
-function handleIngest(req, res) {
+export function handleIngest(req, res) {
   // Simple shared-secret auth — this endpoint is only ever called by our
   // own Playwright script, not by QP or any public client, so a static
   // bearer token (set via QP_INGEST_TOKEN env var) is sufficient here.
@@ -151,7 +149,7 @@ function handleIngest(req, res) {
   }
 }
 
-function handleList(req, res) {
+export function handleList(req, res) {
   const store = loadOrders();
   const orders = Object.values(store).sort((a, b) => (b.order_date || '').localeCompare(a.order_date || ''));
 
@@ -164,7 +162,7 @@ function handleList(req, res) {
   res.json({ count: filtered.length, orders: filtered });
 }
 
-function handleSummary(req, res) {
+export function handleSummary(req, res) {
   const store = loadOrders();
   const orders = Object.values(store);
 
@@ -197,12 +195,3 @@ function handleSummary(req, res) {
     }, null),
   });
 }
-
-module.exports = {
-  mergeOrders,
-  loadOrders,
-  handleIngest,
-  handleList,
-  handleSummary,
-  KNOWN_STATUSES,
-};
