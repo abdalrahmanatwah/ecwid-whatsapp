@@ -164,21 +164,26 @@ export function handleList(req, res) {
 
 /**
  * Filters orders down to those "resolved" (Delivered or Undelivered) whose
- * status_changed_at falls within [from, to] (inclusive, UTC day boundaries).
- * This mirrors Bosta's resolution-date anchoring on this same dashboard —
- * see the dashboard.js summary above the Bosta hero cards for the sibling
- * logic. Orders still Pending/Hold/Out for Delivery are never "resolved"
- * regardless of when they last changed, so they're excluded from any
- * date-filtered view (they still show up in the unfiltered/live counts).
+ * REAL resolution date falls within [from, to] (inclusive, UTC day
+ * boundaries). The real resolution date comes straight from QP's own export:
+ *   - Delivered orders   → the `collected` date (when COD cash was taken)
+ *   - Undelivered orders → the `returned` date (when the shipment came back)
  *
- * IMPORTANT CAVEAT: status_changed_at is only as precise as our polling
- * interval (~25 min) and only exists from the moment this system started
- * tracking a given order — it is NOT QP's own internal resolution
- * timestamp. An order that was already Delivered the very first time we
- * ever saw it will have status_changed_at == first_seen_at, which is the
- * sync time, not necessarily the true delivery time. This is a reasonable
- * approximation, not an exact match to Bosta's resolution-date precision.
+ * This is QP's own authoritative timestamp, so it works correctly even for
+ * orders that were already resolved the first time we ever synced them —
+ * unlike status_changed_at, which would just be the sync time. If a resolved
+ * order is somehow missing its collected/returned date, we fall back to
+ * status_changed_at so it isn't silently dropped.
+ *
+ * Orders still Pending/Hold/Out for Delivery are never "resolved" and are
+ * excluded from any date-filtered view (they still show in the live counts).
  */
+function resolutionDateOf(order) {
+  if (order.status === 'Delivered') return order.collected || order.status_changed_at || null;
+  if (order.status === 'Undelivered') return order.returned || order.status_changed_at || null;
+  return null;
+}
+
 function filterResolvedByDateRange(orders, from, to) {
   if (!from && !to) return null; // signal: no filtering requested
 
@@ -187,9 +192,13 @@ function filterResolvedByDateRange(orders, from, to) {
 
   return orders.filter((o) => {
     const isResolved = o.status === 'Delivered' || o.status === 'Undelivered';
-    if (!isResolved || !o.status_changed_at) return false;
-    const changedTime = new Date(o.status_changed_at).getTime();
-    return changedTime >= fromTime && changedTime <= toTime;
+    if (!isResolved) return false;
+    const resDate = resolutionDateOf(o);
+    if (!resDate) return false;
+    // resDate may be a date-only string like "2026-06-05" — treat as that UTC day
+    const t = new Date(resDate.length === 10 ? resDate + 'T12:00:00.000Z' : resDate).getTime();
+    if (Number.isNaN(t)) return false;
+    return t >= fromTime && t <= toTime;
   });
 }
 
