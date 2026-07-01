@@ -395,6 +395,55 @@
   .row-bar-fill.qp-hold { background: var(--amber); }
   .row-bar-fill.qp-pending { background: var(--mist); opacity: 0.5; }
 
+  /* ---------- QP last-50 orders list ---------- */
+  .qp-list { display: flex; flex-direction: column; }
+  .qp-order {
+    padding: 10px 0;
+    border-top: 1px solid var(--hairline);
+  }
+  .qp-order:first-child { border-top: none; }
+  .qp-order-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .qp-order-name {
+    font-family: var(--font-body);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--chalk);
+  }
+  .qp-order-meta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--mist);
+    margin-top: 3px;
+  }
+  .qp-order-price { color: var(--amber); font-weight: 600; }
+  .qp-order-desc {
+    font-family: var(--font-body);
+    font-size: 12px;
+    color: var(--mist);
+    margin-top: 4px;
+    line-height: 1.4;
+  }
+  .qp-pill {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    padding: 3px 9px;
+    border-radius: 20px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .qp-pill-delivered   { background: var(--ball); color: var(--night); }
+  .qp-pill-undelivered { background: var(--red); color: var(--chalk); }
+  .qp-pill-hold        { background: var(--amber); color: var(--night); }
+  .qp-pill-transit     { background: var(--surface-2); color: var(--chalk); }
+  .qp-pill-pending     { background: var(--surface-2); color: var(--mist); }
+
   /* ---------- combined totals (Bosta + QP), sits above the tabs ---------- */
   .combined-card {
     background: var(--surface-2);
@@ -529,7 +578,6 @@
   }
 
   let lastBostaData = null;
-  let lastQPData = null;
 
   tabs.forEach((tab) => {
     tab.addEventListener('click', () => {
@@ -553,15 +601,12 @@
     loadBoth('custom', fromDate.value, toDate.value);
   });
 
-  // Runs Bosta and QP loads together, then renders the combined-totals
-  // strip once both have resolved (independently — one failing doesn't
-  // block the other from rendering its own section).
+  // Runs Bosta's period-scoped load, then renders the combined-totals strip.
+  // QP is NOT loaded here — it's a standalone "last 50 orders" list that
+  // doesn't change with the period tabs, so it's loaded once on page load.
   async function loadBoth(period, from, to) {
     document.getElementById('combinedTotals').innerHTML = '';
-    await Promise.allSettled([
-      load(period, from, to),
-      loadQP(from, to),
-    ]);
+    await load(period, from, to);
     renderCombinedTotals();
   }
 
@@ -593,25 +638,23 @@
   // whole strip.
   function renderCombinedTotals() {
     const el = document.getElementById('combinedTotals');
-    if (!lastBostaData && !lastQPData) { el.innerHTML = ''; return; }
+    if (!lastBostaData) { el.innerHTML = ''; return; }
 
-    const bostaEarnings = lastBostaData ? lastBostaData.earnings : 0;
-    const bostaDelivered = lastBostaData ? lastBostaData.counts.delivered : 0;
-    const qpEarnings = lastQPData ? parseFloat(lastQPData.period_cod_collected_egp) : 0;
-    const qpDelivered = lastQPData ? lastQPData.period_delivered_count : 0;
-    const currency = (lastBostaData && lastBostaData.currency) || 'EGP';
+    const bostaEarnings = lastBostaData.earnings || 0;
+    const bostaDelivered = lastBostaData.counts.delivered || 0;
+    const currency = lastBostaData.currency || 'EGP';
 
-    const totalEarnings = bostaEarnings + qpEarnings;
-    const totalDelivered = bostaDelivered + qpDelivered;
-
+    // QP is shown as a standalone "last 50 orders" list below, not a
+    // period-filtered figure, so it isn't summed into this strip. This strip
+    // reflects Bosta for the selected period.
     let html = '<div class="combined-card">';
     html += '  <div class="combined-row">';
-    html += '    <div class="combined-total">' + fmtMoney(totalEarnings, currency) + '</div>';
-    html += '    <div class="combined-breakdown">' + fmtMoney(bostaEarnings, currency) + ' Bosta + ' + fmtMoney(qpEarnings, currency) + ' QP</div>';
+    html += '    <div class="combined-total">' + fmtMoney(bostaEarnings, currency) + '</div>';
+    html += '    <div class="combined-breakdown">Bosta earnings · this period</div>';
     html += '  </div>';
     html += '  <div class="combined-row">';
-    html += '    <div class="combined-total">' + totalDelivered + ' delivered</div>';
-    html += '    <div class="combined-breakdown">' + bostaDelivered + ' Bosta + ' + qpDelivered + ' QP</div>';
+    html += '    <div class="combined-total">' + bostaDelivered + ' delivered</div>';
+    html += '    <div class="combined-breakdown">Bosta · this period</div>';
     html += '  </div>';
     html += '</div>';
     el.innerHTML = html;
@@ -720,83 +763,67 @@
 
   const initialDates = resolvePeriodDates('today');
   loadBoth('today', initialDates.from, initialDates.to);
+  loadQP(); // QP loads once, independent of the period tabs
 
-  // ---------- QP Express section — now period-scoped, matching Bosta's tabs ----------
-  async function loadQP(from, to) {
+  // ---------- QP Express — last 50 orders with their current status ----------
+  async function loadQP() {
     const qpContent = document.getElementById('qpContent');
     try {
-      const params = new URLSearchParams();
-      if (from) params.set('from', from);
-      if (to) params.set('to', to);
-      const res = await fetch('/api/qp/summary?' + params.toString());
+      const res = await fetch('/api/qp/orders');
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
-      lastQPData = data;
       renderQP(data);
     } catch (err) {
-      lastQPData = null;
       qpContent.innerHTML = '<div class="courier-card"><div class="state-msg error">QP Express: could not load (' + escapeHtml(err.message) + ')</div></div>';
     }
   }
 
-  function qpUpdatedLabel(iso) {
-    if (!iso) return 'no data yet';
-    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-    if (mins < 1) return 'updated just now';
-    if (mins < 60) return 'updated ' + mins + 'm ago';
-    const hrs = Math.round(mins / 60);
-    return 'updated ' + hrs + 'h ago';
+  // Maps QP status → the CSS colour class used for the status pill.
+  function qpStatusClass(status) {
+    switch (status) {
+      case 'Delivered': return 'qp-pill-delivered';
+      case 'Undelivered': return 'qp-pill-undelivered';
+      case 'Hold': return 'qp-pill-hold';
+      case 'Out for Delivery': return 'qp-pill-transit';
+      case 'Pending': return 'qp-pill-pending';
+      default: return 'qp-pill-pending';
+    }
   }
 
   function renderQP(data) {
     const qpContent = document.getElementById('qpContent');
+    const orders = (data.orders || []).slice(0, 50);
 
     let html = '<div class="courier-card">';
     html += '  <div class="courier-title">';
     html += '    <span class="name"><span class="dot"></span>QP Express</span>';
-    html += '    <span class="updated">' + escapeHtml(qpUpdatedLabel(data.last_updated)) + '</span>';
+    html += '    <span class="updated">last ' + orders.length + ' orders</span>';
     html += '  </div>';
 
-    if (!data.total_orders) {
+    if (orders.length === 0) {
       html += '  <div class="empty-note">No QP orders synced yet.</div>';
       html += '</div>';
       qpContent.innerHTML = html;
       return;
     }
 
-    // Everything below is period-scoped (resolution-date anchored to the
-    // active tab) — no cumulative/all-time numbers shown here at all.
-    const periodDelivered = data.period_delivered_count || 0;
-    const periodUndelivered = data.period_undelivered_count || 0;
-    const maxCount = Math.max(periodDelivered, periodUndelivered, 1);
-
-    // Hero: COD collected + delivery rate, both for the selected period
-    html += '  <div class="qp-hero">';
-    html += '    <div><div class="hero-label">COD collected · this period</div><div class="qp-hero-value amber">' + fmtMoney(data.period_cod_collected_egp, 'EGP') + '</div></div>';
-    html += '    <div><div class="hero-label">Delivery rate · this period</div><div class="qp-hero-value">' + (data.period_delivery_rate_percent !== null ? data.period_delivery_rate_percent + '%' : '—') + '</div></div>';
+    html += '  <div class="qp-list">';
+    orders.forEach((o) => {
+      const cod = o.cod ? fmtMoney(o.cod, 'EGP') : '—';
+      const desc = o.shipment_contents || '';
+      html += '<div class="qp-order">';
+      html += '  <div class="qp-order-top">';
+      html += '    <span class="qp-order-name">' + escapeHtml(o.full_name || '—') + '</span>';
+      html += '    <span class="qp-pill ' + qpStatusClass(o.status) + '">' + escapeHtml(o.status || '—') + '</span>';
+      html += '  </div>';
+      html += '  <div class="qp-order-meta"><span class="qp-order-price">' + cod + '</span>' + (o.order_date ? ' · <span class="qp-order-date">' + escapeHtml(o.order_date) + '</span>' : '') + '</div>';
+      if (desc) html += '  <div class="qp-order-desc">' + escapeHtml(desc) + '</div>';
+      html += '</div>';
+    });
     html += '  </div>';
-
-    // Period-scoped delivered / undelivered counts
-    if (periodDelivered === 0 && periodUndelivered === 0) {
-      html += '  <div class="empty-note">No orders resolved in this period.</div>';
-    } else {
-      html += row('Delivered', periodDelivered, maxCount, 'delivered');
-      html += row('Undelivered', periodUndelivered, maxCount, 'undelivered');
-    }
-
     html += '</div>';
 
     qpContent.innerHTML = html;
-
-    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const bars = qpContent.querySelectorAll('.row-bar-fill[data-target]');
-    if (reduceMotion) {
-      bars.forEach((el) => { el.style.transition = 'none'; el.style.width = el.dataset.target; });
-    } else {
-      requestAnimationFrame(() => {
-        bars.forEach((el) => { el.style.width = el.dataset.target; });
-      });
-    }
   }
 })();
 </script>
