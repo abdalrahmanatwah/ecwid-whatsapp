@@ -48,7 +48,7 @@ app.get('/dashboard', requireAuth, (_req, res) => {
  * The read routes (list/summary) are unauthenticated for now, same    *
  * trust level as the rest of this service's internal API surface.     *
  * ------------------------------------------------------------------ */
-app.post('/webhooks/qp-orders', qpOrders.handleIngest);
+app.post('/webhooks/qp-orders', express.json({ limit: '10mb' }), qpOrders.handleIngest);
 app.get('/api/qp/orders', qpOrders.handleList);
 app.get('/api/qp/summary', qpOrders.handleSummary);
 
