@@ -325,6 +325,75 @@
   }
 
   ::selection { background: var(--ball); color: var(--night); }
+
+  /* ---------- courier divider ---------- */
+  .courier-divider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 22px 0 12px;
+  }
+  .courier-divider::before,
+  .courier-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--hairline);
+  }
+  .courier-divider span {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--mist);
+    letter-spacing: 0.14em;
+  }
+
+  /* ---------- QP Express section (amber accent distinguishes it from Bosta's ball-green) ---------- */
+  :root {
+    --amber: #E8A33D;
+  }
+  .courier-card {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-left: 3px solid var(--amber);
+    border-radius: 10px;
+    padding: 16px;
+    margin-bottom: 10px;
+  }
+  .courier-title {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 17px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+  .courier-title .name { display: flex; align-items: center; gap: 7px; }
+  .courier-title .name .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--amber);
+  }
+  .courier-title .updated {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--mist);
+  }
+  .qp-hero {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .qp-hero-value {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(24px, 6vw, 30px);
+    line-height: 1;
+  }
+  .qp-hero-value.amber { color: var(--amber); }
+  .row-bar-fill.qp-hold { background: var(--amber); }
+  .row-bar-fill.qp-pending { background: var(--mist); opacity: 0.5; }
 </style>
 </head>
 <body>
@@ -355,6 +424,14 @@
 
     <div id="content">
       <div class="state-msg">Loading today's numbers…</div>
+    </div>
+
+    <div class="courier-divider">
+      <span>OTHER COURIERS</span>
+    </div>
+
+    <div id="qpContent">
+      <div class="state-msg">Loading QP Express…</div>
     </div>
   </div>
 
@@ -532,6 +609,79 @@
   }
 
   load('today');
+  loadQP();
+
+  // ---------- QP Express section — independent snapshot, not period-scoped ----------
+  async function loadQP() {
+    const qpContent = document.getElementById('qpContent');
+    try {
+      const res = await fetch('/api/qp/summary');
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      renderQP(data);
+    } catch (err) {
+      qpContent.innerHTML = '<div class="courier-card"><div class="state-msg error">QP Express: could not load (' + escapeHtml(err.message) + ')</div></div>';
+    }
+  }
+
+  function qpUpdatedLabel(iso) {
+    if (!iso) return 'no data yet';
+    const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (mins < 1) return 'updated just now';
+    if (mins < 60) return 'updated ' + mins + 'm ago';
+    const hrs = Math.round(mins / 60);
+    return 'updated ' + hrs + 'h ago';
+  }
+
+  function renderQP(data) {
+    const qpContent = document.getElementById('qpContent');
+    const s = data.by_status || {};
+    const delivered = s['Delivered'] || 0;
+    const undelivered = s['Undelivered'] || 0;
+    const outForDelivery = s['Out for Delivery'] || 0;
+    const pending = s['Pending'] || 0;
+    const hold = s['Hold'] || 0;
+    const maxCount = Math.max(delivered, undelivered, outForDelivery, pending, hold, 1);
+
+    let html = '<div class="courier-card">';
+    html += '  <div class="courier-title">';
+    html += '    <span class="name"><span class="dot"></span>QP Express</span>';
+    html += '    <span class="updated">' + escapeHtml(qpUpdatedLabel(data.last_updated)) + '</span>';
+    html += '  </div>';
+
+    if (!data.total_orders) {
+      html += '  <div class="empty-note">No QP orders synced yet.</div>';
+      html += '</div>';
+      qpContent.innerHTML = html;
+      return;
+    }
+
+    html += '  <div class="qp-hero">';
+    html += '    <div><div class="hero-label">COD collected</div><div class="qp-hero-value amber">' + fmtMoney(data.total_cod_egp, 'EGP') + '</div></div>';
+    html += '    <div><div class="hero-label">Delivery rate</div><div class="qp-hero-value">' + (data.delivery_rate_percent !== null ? data.delivery_rate_percent + '%' : '—') + '</div></div>';
+    html += '  </div>';
+
+    html += row('Delivered', delivered, maxCount, 'delivered');
+    html += row('Out for delivery', outForDelivery, maxCount, 'qp-pending');
+    html += row('Hold', hold, maxCount, 'qp-hold');
+    html += row('Pending', pending, maxCount, 'qp-pending');
+    html += row('Undelivered', undelivered, maxCount, 'undelivered');
+
+    html += '  <div class="empty-note">' + data.total_orders + ' total orders in store</div>';
+    html += '</div>';
+
+    qpContent.innerHTML = html;
+
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const bars = qpContent.querySelectorAll('.row-bar-fill[data-target]');
+    if (reduceMotion) {
+      bars.forEach((el) => { el.style.transition = 'none'; el.style.width = el.dataset.target; });
+    } else {
+      requestAnimationFrame(() => {
+        bars.forEach((el) => { el.style.width = el.dataset.target; });
+      });
+    }
+  }
 })();
 </script>
 </body>
