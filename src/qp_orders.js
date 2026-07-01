@@ -162,36 +162,93 @@ export function handleList(req, res) {
   res.json({ count: filtered.length, orders: filtered });
 }
 
+/**
+ * Filters orders down to those "resolved" (Delivered or Undelivered) whose
+ * status_changed_at falls within [from, to] (inclusive, UTC day boundaries).
+ * This mirrors Bosta's resolution-date anchoring on this same dashboard —
+ * see the dashboard.js summary above the Bosta hero cards for the sibling
+ * logic. Orders still Pending/Hold/Out for Delivery are never "resolved"
+ * regardless of when they last changed, so they're excluded from any
+ * date-filtered view (they still show up in the unfiltered/live counts).
+ *
+ * IMPORTANT CAVEAT: status_changed_at is only as precise as our polling
+ * interval (~25 min) and only exists from the moment this system started
+ * tracking a given order — it is NOT QP's own internal resolution
+ * timestamp. An order that was already Delivered the very first time we
+ * ever saw it will have status_changed_at == first_seen_at, which is the
+ * sync time, not necessarily the true delivery time. This is a reasonable
+ * approximation, not an exact match to Bosta's resolution-date precision.
+ */
+function filterResolvedByDateRange(orders, from, to) {
+  if (!from && !to) return null; // signal: no filtering requested
+
+  const fromTime = from ? new Date(from + 'T00:00:00.000Z').getTime() : -Infinity;
+  const toTime = to ? new Date(to + 'T23:59:59.999Z').getTime() : Infinity;
+
+  return orders.filter((o) => {
+    const isResolved = o.status === 'Delivered' || o.status === 'Undelivered';
+    if (!isResolved || !o.status_changed_at) return false;
+    const changedTime = new Date(o.status_changed_at).getTime();
+    return changedTime >= fromTime && changedTime <= toTime;
+  });
+}
+
 export function handleSummary(req, res) {
   const store = loadOrders();
-  const orders = Object.values(store);
+  const allOrders = Object.values(store);
+  const { from, to } = req.query;
 
+  const resolvedInRange = filterResolvedByDateRange(allOrders, from, to);
+  const isDateFiltered = resolvedInRange !== null;
+
+  // by_status / total_orders / total_cod always reflect the FULL live store —
+  // these are "right now" snapshot numbers, not period-scoped, matching the
+  // "Right now" section semantics used elsewhere in this dashboard.
   const byStatus = {};
   for (const s of KNOWN_STATUSES) byStatus[s] = 0;
   let unmappedStatusCount = 0;
+  for (const o of allOrders) {
+    if (byStatus[o.status] !== undefined) byStatus[o.status]++;
+    else unmappedStatusCount++;
+  }
+  const totalCOD = allOrders.reduce((sum, o) => sum + (parseFloat(o.cod) || 0), 0);
 
-  for (const o of orders) {
-    if (byStatus[o.status] !== undefined) {
-      byStatus[o.status]++;
-    } else {
-      unmappedStatusCount++;
-    }
+  // delivery_rate_percent switches meaning based on whether from/to were passed:
+  //   - unfiltered: rate across ALL resolved orders ever synced (unchanged behavior)
+  //   - filtered:   rate across only orders resolved within [from, to]
+  let deliveredCount, undeliveredCount, resolvedCount, deliveryRate, resolvedCOD;
+  if (isDateFiltered) {
+    deliveredCount = resolvedInRange.filter((o) => o.status === 'Delivered').length;
+    undeliveredCount = resolvedInRange.filter((o) => o.status === 'Undelivered').length;
+    resolvedCount = deliveredCount + undeliveredCount;
+    deliveryRate = resolvedCount > 0 ? ((deliveredCount / resolvedCount) * 100).toFixed(1) : null;
+    resolvedCOD = resolvedInRange
+      .filter((o) => o.status === 'Delivered')
+      .reduce((sum, o) => sum + (parseFloat(o.cod) || 0), 0);
+  } else {
+    deliveredCount = byStatus['Delivered'] || 0;
+    undeliveredCount = byStatus['Undelivered'] || 0;
+    resolvedCount = deliveredCount + undeliveredCount;
+    deliveryRate = resolvedCount > 0 ? ((deliveredCount / resolvedCount) * 100).toFixed(1) : null;
+    resolvedCOD = totalCOD;
   }
 
-  const totalCOD = orders.reduce((sum, o) => sum + (parseFloat(o.cod) || 0), 0);
-  const deliveredCount = byStatus['Delivered'] || 0;
-  const undeliveredCount = byStatus['Undelivered'] || 0;
-  const resolvedCount = deliveredCount + undeliveredCount;
-  const deliveryRate = resolvedCount > 0 ? ((deliveredCount / resolvedCount) * 100).toFixed(1) : null;
-
   res.json({
-    total_orders: orders.length,
+    // "Right now" — always full store, never period-limited
+    total_orders: allOrders.length,
     by_status: byStatus,
     unmapped_status_count: unmappedStatusCount,
     total_cod_egp: totalCOD.toFixed(2),
-    delivery_rate_percent: deliveryRate,
-    last_updated: orders.reduce((latest, o) => {
+    last_updated: allOrders.reduce((latest, o) => {
       return !latest || o.last_seen_at > latest ? o.last_seen_at : latest;
     }, null),
+
+    // Period-scoped (or full-history if no from/to given) — resolution-date anchored
+    is_date_filtered: isDateFiltered,
+    period_delivered_count: deliveredCount,
+    period_undelivered_count: undeliveredCount,
+    period_resolved_count: resolvedCount,
+    period_delivery_rate_percent: deliveryRate,
+    period_cod_collected_egp: resolvedCOD.toFixed(2),
   });
 }
