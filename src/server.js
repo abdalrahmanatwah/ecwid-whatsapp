@@ -9,6 +9,7 @@ import { startPolling } from './poller.js';
 import { notifyMerchant } from './notify.js';
 import { dashboardRouter } from './dashboard.js';
 import { requireAuth } from './auth.js';
+import * as qpOrders from './qp_orders.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -38,6 +39,18 @@ app.use('/dashboard', requireAuth, dashboardRouter);
 app.get('/dashboard', requireAuth, (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'dashboard.html'));
 });
+
+/* ------------------------------------------------------------------ *
+ * QP Express: separate order-tracking section, not mixed with Bosta.  *
+ * Ingest is called by our own local Playwright sync script only —     *
+ * protected by a shared-secret bearer token (QP_INGEST_TOKEN), not    *
+ * Basic Auth, since it's a machine-to-machine call, not a browser.    *
+ * The read routes (list/summary) are unauthenticated for now, same    *
+ * trust level as the rest of this service's internal API surface.     *
+ * ------------------------------------------------------------------ */
+app.post('/webhooks/qp-orders', qpOrders.handleIngest);
+app.get('/api/qp/orders', qpOrders.handleList);
+app.get('/api/qp/summary', qpOrders.handleSummary);
 
 /* ------------------------------------------------------------------ *
  * WhatsApp webhook verification (Meta calls this once during setup)   *
