@@ -169,18 +169,21 @@ export function handleList(req, res) {
  *   - Delivered orders   → the `collected` date (when COD cash was taken)
  *   - Undelivered orders → the `returned` date (when the shipment came back)
  *
- * This is QP's own authoritative timestamp, so it works correctly even for
- * orders that were already resolved the first time we ever synced them —
- * unlike status_changed_at, which would just be the sync time. If a resolved
- * order is somehow missing its collected/returned date, we fall back to
- * status_changed_at so it isn't silently dropped.
+ * IMPORTANT: there is deliberately NO fallback to status_changed_at. That
+ * field is when WE synced the order, not when QP resolved it. Older orders
+ * imported before we captured collected/returned have null dates — falling
+ * back to status_changed_at would wrongly pile all of them onto whatever day
+ * the sync ran (this was the "6 delivered / 9 undelivered showing up on a day
+ * with no real deliveries" bug). An order with no real resolution date is
+ * simply excluded from date-filtered views; it still counts in the unfiltered
+ * live totals.
  *
  * Orders still Pending/Hold/Out for Delivery are never "resolved" and are
  * excluded from any date-filtered view (they still show in the live counts).
  */
 function resolutionDateOf(order) {
-  if (order.status === 'Delivered') return order.collected || order.status_changed_at || null;
-  if (order.status === 'Undelivered') return order.returned || order.status_changed_at || null;
+  if (order.status === 'Delivered') return order.collected || null;
+  if (order.status === 'Undelivered') return order.returned || null;
   return null;
 }
 
