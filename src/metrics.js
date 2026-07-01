@@ -76,6 +76,14 @@ export function resolveWindow(period, customFrom, customTo) {
   switch (period) {
     case 'today':
       return { fromUnix: todayStart, toUnix: nowUnix, label: 'Today' };
+    case 'yesterday': {
+      // Full Cairo-local calendar day: [yesterday 00:00, today 00:00).
+      // Unlike 'today' (which runs to "now"), yesterday is a closed window —
+      // it doesn't bleed into today, so earnings/delivery-rate for it don't
+      // keep changing as the current day progresses.
+      const yesterdayStart = todayStart - 86400;
+      return { fromUnix: yesterdayStart, toUnix: todayStart - 1, label: 'Yesterday' };
+    }
     case '7d':
       return { fromUnix: todayStart - 6 * 86400, toUnix: nowUnix, label: 'Last 7 days' };
     case '14d':
