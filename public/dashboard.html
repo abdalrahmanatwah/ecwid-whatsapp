@@ -750,16 +750,6 @@
 
   function renderQP(data) {
     const qpContent = document.getElementById('qpContent');
-    // Status bars below the hero always reflect the LIVE full store (not
-    // period-limited) — this is the "current state of everything QP is
-    // tracking", same "Right now, not period-limited" idea Bosta uses.
-    const s = data.by_status || {};
-    const liveDelivered = s['Delivered'] || 0;
-    const liveUndelivered = s['Undelivered'] || 0;
-    const outForDelivery = s['Out for Delivery'] || 0;
-    const pending = s['Pending'] || 0;
-    const hold = s['Hold'] || 0;
-    const maxCount = Math.max(liveDelivered, liveUndelivered, outForDelivery, pending, hold, 1);
 
     let html = '<div class="courier-card">';
     html += '  <div class="courier-title">';
@@ -774,21 +764,26 @@
       return;
     }
 
-    // Hero: period-scoped (resolution-date anchored, matches the active tab)
+    // Everything below is period-scoped (resolution-date anchored to the
+    // active tab) — no cumulative/all-time numbers shown here at all.
+    const periodDelivered = data.period_delivered_count || 0;
+    const periodUndelivered = data.period_undelivered_count || 0;
+    const maxCount = Math.max(periodDelivered, periodUndelivered, 1);
+
+    // Hero: COD collected + delivery rate, both for the selected period
     html += '  <div class="qp-hero">';
-    html += '    <div><div class="hero-label">COD collected · this period</div><div class="qp-hero-value amber">' + fmtMoney(data.period_cod_collected_egp, 'EGP') + '</div><div class="hero-sub">' + data.period_delivered_count + ' delivered this period</div></div>';
-    html += '    <div><div class="hero-label">Delivery rate · this period</div><div class="qp-hero-value">' + (data.period_delivery_rate_percent !== null ? data.period_delivery_rate_percent + '%' : '—') + '</div><div class="hero-sub">' + (data.period_resolved_count ? data.period_resolved_count + ' resolved' : 'nothing resolved yet') + '</div></div>';
+    html += '    <div><div class="hero-label">COD collected · this period</div><div class="qp-hero-value amber">' + fmtMoney(data.period_cod_collected_egp, 'EGP') + '</div></div>';
+    html += '    <div><div class="hero-label">Delivery rate · this period</div><div class="qp-hero-value">' + (data.period_delivery_rate_percent !== null ? data.period_delivery_rate_percent + '%' : '—') + '</div></div>';
     html += '  </div>';
 
-    // Status bars: live snapshot, not period-limited — labeled clearly so it's not confused with the hero above
-    html += '  <div class="board-title" style="margin-top:2px;"><span>Right now — all orders</span><span class="live-tag">● not period-limited</span></div>';
-    html += row('Delivered', liveDelivered, maxCount, 'delivered');
-    html += row('Out for delivery', outForDelivery, maxCount, 'qp-pending');
-    html += row('Hold', hold, maxCount, 'qp-hold');
-    html += row('Pending', pending, maxCount, 'qp-pending');
-    html += row('Undelivered', liveUndelivered, maxCount, 'undelivered');
+    // Period-scoped delivered / undelivered counts
+    if (periodDelivered === 0 && periodUndelivered === 0) {
+      html += '  <div class="empty-note">No orders resolved in this period.</div>';
+    } else {
+      html += row('Delivered', periodDelivered, maxCount, 'delivered');
+      html += row('Undelivered', periodUndelivered, maxCount, 'undelivered');
+    }
 
-    html += '  <div class="empty-note">' + data.total_orders + ' total orders in store</div>';
     html += '</div>';
 
     qpContent.innerHTML = html;
