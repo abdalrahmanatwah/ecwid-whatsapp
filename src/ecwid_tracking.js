@@ -28,8 +28,15 @@ const RETURNED_STATUS = process.env.RETURNED_FULFILLMENT_STATUS || 'RETURNED';
 const CANCEL_STATUS = process.env.CANCEL_PAYMENT_STATUS || 'CANCELLED';
 const CANCEL_FULFILLMENT_STATUS = process.env.CANCEL_FULFILLMENT_STATUS || 'WILL_NOT_DELIVER';
 
+// How often to send the "orders still waiting for a tracking number" digest,
+// and how old a confirmed order must be before it shows up in that digest
+// (so brand-new confirmations don't nag you within minutes).
+const TRACKING_REMINDER_EVERY_MS = Number(process.env.TRACKING_REMINDER_INTERVAL_HOURS || 24) * 3_600_000;
+const TRACKING_REMINDER_MIN_AGE_HOURS = Number(process.env.TRACKING_REMINDER_MIN_AGE_HOURS || 12);
+
 const ms = (iso) => (iso ? Date.now() - new Date(iso).getTime() : Infinity);
 const days = (iso) => (iso ? (Date.now() - new Date(iso).getTime()) / 86_400_000 : 0);
+const hours = (iso) => (iso ? (Date.now() - new Date(iso).getTime()) / 3_600_000 : 0);
 
 // Statuses meaning "confirmed, still waiting for a tracking number" — includes
 // leftovers from the old auto-ship version (ship_failed, dry_run, ship_skipped_multi).
@@ -87,6 +94,63 @@ async function restockOrder(orderId) {
 }
 const isReturned = (v) => /\breturned\b/i.test(v);
 const needsAction = (v) => /\bexception\b|awaiting/i.test(v);
+
+// ---------------------------------------------------------------------------
+// Daily digest: orders that are confirmed but still have no Bosta tracking
+// number on the Ecwid order. These are the ones that silently fall through
+// the cracks (delivered in Bosta but never linked here because no tracking
+// was assigned). Self-throttled to run once per TRACKING_REMINDER_EVERY_MS.
+// ---------------------------------------------------------------------------
+export async function remindAwaitingTracking() {
+  const lastSent = store.getMeta('lastTrackingReminderUnix');
+  const nowUnix = Math.floor(Date.now() / 1000);
+  if (lastSent && (nowUnix - lastSent) * 1000 < TRACKING_REMINDER_EVERY_MS) return;
+
+  // Collect every order still waiting for a tracking number:
+  //  - AWAITING_TRACKING statuses with no bostaTracking yet, older than the
+  //    min-age grace window (so a just-confirmed order doesn't nag immediately)
+  //  - orders that already gave up waiting ('no_tracking')
+  const waiting = [];
+  for (const rec of store.list()) {
+    const isAwaiting = AWAITING_TRACKING.has(rec.status) && !rec.bostaTracking;
+    const gaveUp = rec.status === 'no_tracking';
+    if (!isAwaiting && !gaveUp) continue;
+
+    // Age from confirmation (fall back to any timestamp we have).
+    const ageRef = rec.confirmedAt || rec.updatedAt || rec.firstFailedAt;
+    if (isAwaiting && hours(ageRef) < TRACKING_REMINDER_MIN_AGE_HOURS) continue;
+
+    waiting.push({
+      orderId: rec.orderId,
+      orderNumber: rec.orderNumber || rec.orderId,
+      ageDays: Math.floor(days(ageRef)),
+      gaveUp,
+    });
+  }
+
+  // Always advance the timer so we send at most once per interval, even when
+  // there's nothing to report (we simply skip the message in that case).
+  store.setMeta('lastTrackingReminderUnix', nowUnix);
+
+  if (waiting.length === 0) {
+    console.log('[track] daily tracking reminder: nothing awaiting a tracking number');
+    return;
+  }
+
+  // Sort oldest first — those are the most urgent.
+  waiting.sort((a, b) => b.ageDays - a.ageDays);
+
+  const lines = waiting.map((w) => {
+    const tag = w.gaveUp ? ' (gave up waiting — needs attention)' : '';
+    const age = w.ageDays > 0 ? ` — ${w.ageDays}d waiting` : '';
+    return `• Order ${w.orderNumber}${age}${tag}`;
+  });
+
+  const header = `📋 ${waiting.length} order${waiting.length === 1 ? '' : 's'} still need a Bosta tracking number on Ecwid:`;
+  const footer = '\nAdd the tracking number on each Ecwid order so delivery status can be followed automatically.';
+  await notifyMerchant(`${header}\n${lines.join('\n')}\n${footer}`);
+  console.log(`[track] daily tracking reminder sent for ${waiting.length} order(s)`);
+}
 
 export async function trackFromEcwid() {
   if (!bostaConfigured()) return;
@@ -184,4 +248,7 @@ export async function trackFromEcwid() {
       continue;
     }
   }
+
+  // Daily digest of orders still missing a tracking number (self-throttled).
+  await remindAwaitingTracking();
 }
