@@ -13,7 +13,7 @@
 
 import { getOrder, updateOrder, adjustInventory } from './ecwid.js';
 import { getDeliveryState, bostaConfigured } from './bosta.js';
-import { sendTemplate } from './whatsapp.js';
+import { sendTemplate, sendTemplateWithButtons } from './whatsapp.js';
 import { normalizePhone } from './phone.js';
 import { store } from './store.js';
 import { notifyMerchant } from './notify.js';
@@ -103,6 +103,24 @@ async function trySend(customer, template, lang, orderId) {
   if (!template || !customer) return false;
   try { await sendTemplate(customer, template, lang); return true; }
   catch (e) { console.warn(`[track] message send failed for ${orderId} (template ${template}):`, e.message); return false; }
+}
+
+// Postponed template has two quick-reply buttons: "تم التواصل" / "لم يتم
+// التواصل" (did the shipping company actually contact the customer about the
+// new date?). Payloads carry the order ID so server.js's webhook knows which
+// order the tap belongs to — handled there in CONTACTED_ / NOT_CONTACTED_.
+async function trySendPostponed(customer, orderNumber, orderId) {
+  if (!POSTPONED_TEMPLATE || !customer) return false;
+  try {
+    await sendTemplateWithButtons(customer, POSTPONED_TEMPLATE, LANG, {
+      bodyParams: [orderNumber || orderId],
+      buttonPayloads: [`CONTACTED_${orderId}`, `NOT_CONTACTED_${orderId}`],
+    });
+    return true;
+  } catch (e) {
+    console.warn(`[track] postponed message send failed for ${orderId} (template ${POSTPONED_TEMPLATE}):`, e.message);
+    return false;
+  }
 }
 
 // On a return, add every line item's quantity back to its size's stock in Ecwid.
@@ -280,7 +298,7 @@ export async function trackFromEcwid() {
             const postponedCount = (rec.postponedCount || 0) + 1;
             store.upsert(rec.orderId, { postponedCount });
 
-            const sent = await trySend(customer, POSTPONED_TEMPLATE, LANG, rec.orderId);
+            const sent = await trySendPostponed(customer, rec.orderNumber, rec.orderId);
             await notifyMerchant(
               `⏳ Order ${rec.orderId} POSTPONED to another day (Bosta: "${detail}")${sent ? ' — notified the customer.' : POSTPONED_TEMPLATE ? ' — message send failed, see logs.' : ' — no POSTPONED_TEMPLATE_NAME set, customer NOT notified.'}`
             );
