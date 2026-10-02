@@ -3,10 +3,10 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { updateOrder } from './ecwid.js';
-import { sendText } from './whatsapp.js';
+import { sendText, sendTemplate } from './whatsapp.js';
 import { store } from './store.js';
 import { startPolling } from './poller.js';
-import { notifyMerchant } from './notify.js';
+import { notifyMerchant, merchantNumber } from './notify.js';
 import { dashboardRouter } from './dashboard.js';
 import { requireAuth } from './auth.js';
 import * as qpOrders from './qp_orders.js';
@@ -27,6 +27,15 @@ const CONFIRM_MESSAGE =
 
 const CANCEL_MESSAGE =
   'تم إلغاء الأوردر. لو حصل ده بالخطأ، تقدر تعمل الأوردر تاني أو ترد على الرسالة دي.';
+
+const LANG = process.env.WHATSAPP_TEMPLATE_LANG || 'ar';
+// This specific alert ("customer says shipping co. never contacted them") goes
+// through an approved template instead of notifyMerchant's free text, since it
+// must NOT depend on the 24h customer-service window on the owner's number —
+// the whole point is telling the owner about a problem right away.
+// Template body: exactly one variable, the order number, e.g.:
+//   "تنبيه: العميل بتاع الأوردر رقم {{1}} قال إن شركة الشحن متواصلتش معاه بخصوص التأجيل."
+const NOT_CONTACTED_ALERT_TEMPLATE = process.env.NOT_CONTACTED_ALERT_TEMPLATE_NAME || '';
 
 // Replies to the Postponed template's "تم التواصل" / "لم يتم التواصل" buttons.
 const CONTACTED_MESSAGE = 'تمام، شكرًا لتأكيدك 🙏 لو احتجت أي حاجة تانية أنا موجود.';
@@ -133,7 +142,8 @@ function parsePayload(payload) {
 }
 
 async function handleReply({ action, orderId, from }) {
-  const status = store.get(orderId)?.status;
+  const rec = store.get(orderId) || {};
+  const status = rec.status;
 
   if (action === 'confirm') {
     // Confirm only acts on a fresh order. If already confirmed or cancelled, do nothing.
@@ -176,7 +186,20 @@ async function handleReply({ action, orderId, from }) {
   if (action === 'not_contacted') {
     store.upsert(orderId, { postponedContact: 'not_contacted', postponedContactAt: new Date().toISOString(), repliedBy: from });
     await sendText(from, NOT_CONTACTED_MESSAGE);
-    await notifyMerchant(`📞 Order ${orderId}: customer says the shipping company did NOT contact them about the postponement — please follow up with Bosta.`);
+
+    // Approved template (order_postponed_owner_alert_1), not notifyMerchant's
+    // free text — this alert must land right away regardless of whether the
+    // owner's number has an open 24h window.
+    if (NOT_CONTACTED_ALERT_TEMPLATE && merchantNumber) {
+      try {
+        await sendTemplate(merchantNumber, NOT_CONTACTED_ALERT_TEMPLATE, LANG, [rec.orderNumber || orderId]);
+      } catch (e) {
+        console.warn(`[reply] owner alert template failed for ${orderId}:`, e.message);
+      }
+    } else {
+      // Fallback so nothing silently disappears if the template name/number isn't set yet.
+      await notifyMerchant(`📞 Order ${orderId}: customer says the shipping company did NOT contact them about the postponement — please follow up with Bosta.`);
+    }
     console.log(`[reply] order ${orderId} postponed-contact: customer says NOT contacted — merchant alerted`);
     return;
   }
