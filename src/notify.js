@@ -17,6 +17,12 @@ function cleanMerchant(raw) {
 
 const MERCHANT = cleanMerchant(process.env.MERCHANT_WHATSAPP || '');
 
+// Exported so call sites that need GUARANTEED delivery (not dependent on the
+// 24h window) can send the owner an approved template directly via
+// sendTemplate/sendTemplateWithButtons from whatsapp.js, instead of going
+// through notifyMerchant's free-text sendText below.
+export const merchantNumber = MERCHANT;
+
 export async function notifyMerchant(text) {
   if (!MERCHANT) return;
   try {
