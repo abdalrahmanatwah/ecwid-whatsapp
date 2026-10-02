@@ -4,8 +4,9 @@
 // Ecwid order. This watches your confirmed (Processing) orders, picks up that
 // tracking number from Ecwid, then polls Bosta for the delivery's status and
 // sends the follow-up messages:
-//   Delivered → 100 EGP photo offer
-//   Exception → rejection-reason (size fix, etc.)
+//   Delivered  → 100 EGP photo offer
+//   Exception  → rejection-reason (size fix, etc.)
+//   Postponed  → "your order was postponed to another day" notice
 //
 // Two throttled phases per order, and it gives up after a cap so it never polls
 // forever. Never throws.
@@ -13,11 +14,26 @@
 import { getOrder, updateOrder, adjustInventory } from './ecwid.js';
 import { getDeliveryState, bostaConfigured } from './bosta.js';
 import { sendTemplate } from './whatsapp.js';
+import { normalizePhone } from './phone.js';
 import { store } from './store.js';
 import { notifyMerchant } from './notify.js';
 
+const COUNTRY = process.env.DEFAULT_COUNTRY_CODE || '20';
+// Your own number — gets a direct WhatsApp ping when an order gets postponed
+// for a SECOND time (or more), on top of the normal notifyMerchant alert.
+// Sent via an approved template (not free text), so it's not limited by the
+// 24h customer-service window. Create the template in Meta Business Manager
+// with exactly two body variables — {{1}} order number, {{2}} Bosta status
+// text — and put its name in OWNER_ALERT_TEMPLATE_NAME.
+const MERCHANT_ALERT_NUMBER = normalizePhone(process.env.MERCHANT_ALERT_PHONE || '01007642764', COUNTRY);
+const OWNER_ALERT_TEMPLATE = process.env.OWNER_ALERT_TEMPLATE_NAME || '';
+
 const DELIVERED_TEMPLATE = process.env.DELIVERED_TEMPLATE_NAME || '';
 const REJECTED_TEMPLATE = process.env.REJECTED_TEMPLATE_NAME || '';
+// Sent when Bosta reports the delivery was pushed to another day. Needs its own
+// approved WhatsApp template (create/approve it in Meta Business Manager first),
+// since this can fire outside the 24h customer-service window.
+const POSTPONED_TEMPLATE = process.env.POSTPONED_TEMPLATE_NAME || '';
 const LANG = process.env.WHATSAPP_TEMPLATE_LANG || 'ar';
 const LOOK_EVERY_MS = Number(process.env.TRACK_LOOK_INTERVAL_MINUTES || 10) * 60_000;
 const STATUS_EVERY_MS = Number(process.env.BOSTA_STATUS_INTERVAL_MINUTES || 20) * 60_000;
@@ -43,6 +59,19 @@ const hours = (iso) => (iso ? (Date.now() - new Date(iso).getTime()) / 3_600_000
 const AWAITING_TRACKING = new Set(['confirmed', 'confirmed_noship', 'ship_failed', 'dry_run', 'ship_skipped_multi']);
 const isDelivered = (v) => /\bdelivered\b/i.test(v);
 const isCanceled = (v) => /\bcancel/i.test(v);
+const isReturned = (v) => /\breturned\b/i.test(v);
+const needsAction = (v) => /\bexception\b|awaiting/i.test(v);
+
+// Words Bosta's human-readable state (`state.value`) uses when a delivery got
+// pushed to another day. Not 100% confirmed from the API docs — check the
+// `[track] order ... Bosta state: "..."` log line the first time a real order
+// gets postponed, and set POSTPONED_STATUS_PATTERN (a regex, pipe-separated
+// alternatives) in your env if the wording doesn't match this default.
+const POSTPONED_PATTERN = new RegExp(
+  process.env.POSTPONED_STATUS_PATTERN || 'postpon|reschedul|not available|unavailable|try again',
+  'i'
+);
+const isPostponed = (v) => POSTPONED_PATTERN.test(v);
 
 // Ecwid stores tracking on the order's `shipments` array (newer model) and/or the
 // legacy top-level `trackingNumber`. Check both.
@@ -92,8 +121,6 @@ async function restockOrder(orderId) {
     }
   }
 }
-const isReturned = (v) => /\breturned\b/i.test(v);
-const needsAction = (v) => /\bexception\b|awaiting/i.test(v);
 
 // ---------------------------------------------------------------------------
 // Daily digest: orders that are confirmed but still have no Bosta tracking
@@ -204,6 +231,10 @@ export async function trackFromEcwid() {
       try {
         const st = await getDeliveryState(rec.bostaTracking);
         if (!st) continue;
+
+        // Remember what the state was BEFORE this check, so we can tell a brand
+        // new postponement apart from "still postponed from last time we looked".
+        const previousStateValue = rec.lastState;
         store.upsert(rec.orderId, { lastState: st.value, lastStateCode: st.code });
         console.log(`[track] order ${rec.orderId} Bosta state: "${st.value}" (code ${st.code})`);
 
@@ -230,6 +261,37 @@ export async function trackFromEcwid() {
           store.upsert(rec.orderId, { status: 'shipment_canceled' });
           await notifyMerchant(`🚫 Order ${rec.orderId} shipment CANCELED in Bosta — marked Cancelled on Ecwid.`);
           console.log(`[track] order ${rec.orderId} shipment canceled — Ecwid updated`);
+        } else if (isPostponed(st.value)) {
+          // Only message the customer on a FRESH postponement — not every poll
+          // cycle while Bosta keeps reporting the same "postponed" state.
+          const wasAlreadyPostponed = isPostponed(previousStateValue || '');
+          if (!wasAlreadyPostponed) {
+            const postponedCount = (rec.postponedCount || 0) + 1;
+            store.upsert(rec.orderId, { postponedCount });
+
+            const sent = await trySend(customer, POSTPONED_TEMPLATE, LANG, rec.orderId);
+            await notifyMerchant(
+              `⏳ Order ${rec.orderId} POSTPONED to another day (Bosta: "${st.value}")${sent ? ' — notified the customer.' : POSTPONED_TEMPLATE ? ' — message send failed, see logs.' : ' — no POSTPONED_TEMPLATE_NAME set, customer NOT notified.'}`
+            );
+            console.log(`[track] order ${rec.orderId} postponed (#${postponedCount}) — ${sent ? 'customer notified' : 'customer NOT notified'}`);
+
+            // Second (or later) postponement on the SAME order → ping the owner directly,
+            // via an approved template so it isn't limited by the 24h session window.
+            if (postponedCount >= 2 && MERCHANT_ALERT_NUMBER && OWNER_ALERT_TEMPLATE) {
+              try {
+                await sendTemplate(MERCHANT_ALERT_NUMBER, OWNER_ALERT_TEMPLATE, LANG, [
+                  rec.orderNumber || rec.orderId,
+                  st.value,
+                ]);
+                console.log(`[track] order ${rec.orderId} postponed again (#${postponedCount}) — alerted owner on ${MERCHANT_ALERT_NUMBER}`);
+              } catch (e) {
+                console.warn(`[track] couldn't WhatsApp-alert owner about repeat postponement for ${rec.orderId}:`, e.message);
+              }
+            } else if (postponedCount >= 2 && !OWNER_ALERT_TEMPLATE) {
+              console.warn(`[track] order ${rec.orderId} postponed again (#${postponedCount}) but OWNER_ALERT_TEMPLATE_NAME isn't set — owner NOT alerted`);
+            }
+          }
+          // keep status 'tracking' — keep watching for the next attempt
         } else if (needsAction(st.value) && !rec.exceptionNotified) {
           await trySend(customer, REJECTED_TEMPLATE, LANG, rec.orderId);
           store.upsert(rec.orderId, { exceptionNotified: true }); // keep status 'tracking' — keep watching
