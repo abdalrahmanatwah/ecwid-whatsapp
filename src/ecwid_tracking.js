@@ -62,16 +62,26 @@ const isCanceled = (v) => /\bcancel/i.test(v);
 const isReturned = (v) => /\breturned\b/i.test(v);
 const needsAction = (v) => /\bexception\b|awaiting/i.test(v);
 
-// Words Bosta's human-readable state (`state.value`) uses when a delivery got
-// pushed to another day. Not 100% confirmed from the API docs — check the
-// `[track] order ... Bosta state: "..."` log line the first time a real order
-// gets postponed, and set POSTPONED_STATUS_PATTERN (a regex, pipe-separated
-// alternatives) in your env if the wording doesn't match this default.
+// Bosta lumps several very different situations under the SAME coarse state
+// ("Exception", code 47): the delivery got postponed to another day, OR the
+// customer refused to receive it, OR something else entirely. The only way to
+// tell them apart is the more specific `detail` text getDeliveryState()
+// returns (from Bosta's maskedState field) — things like:
+//   "Postponed - the client requested postponement for another day"
+//   "Cancellation - the customer refuses to receive the shipment"
+// These patterns are confirmed from real orders; override via env if Bosta's
+// wording ever changes.
 const POSTPONED_PATTERN = new RegExp(
-  process.env.POSTPONED_STATUS_PATTERN || 'postpon|reschedul|not available|unavailable|try again',
+  process.env.POSTPONED_STATUS_PATTERN || 'postpon|reschedul',
   'i'
 );
 const isPostponed = (v) => POSTPONED_PATTERN.test(v);
+
+const CUSTOMER_REFUSED_PATTERN = new RegExp(
+  process.env.CUSTOMER_REFUSED_STATUS_PATTERN || 'refuses to receive|customer refus',
+  'i'
+);
+const isCustomerRefused = (v) => CUSTOMER_REFUSED_PATTERN.test(v);
 
 // Ecwid stores tracking on the order's `shipments` array (newer model) and/or the
 // legacy top-level `trackingNumber`. Check both.
@@ -234,9 +244,10 @@ export async function trackFromEcwid() {
 
         // Remember what the state was BEFORE this check, so we can tell a brand
         // new postponement apart from "still postponed from last time we looked".
-        const previousStateValue = rec.lastState;
-        store.upsert(rec.orderId, { lastState: st.value, lastStateCode: st.code });
-        console.log(`[track] order ${rec.orderId} Bosta state: "${st.value}" (code ${st.code})`);
+        const previousDetail = rec.lastStateDetail || '';
+        const detail = st.detail || st.value || '';
+        store.upsert(rec.orderId, { lastState: st.value, lastStateCode: st.code, lastStateDetail: detail });
+        console.log(`[track] order ${rec.orderId} Bosta state: "${st.value}" (code ${st.code}) — detail: "${detail}"`);
 
         const customer = rec.repliedBy || rec.to;
         if (isDelivered(st.value)) {
@@ -261,17 +272,17 @@ export async function trackFromEcwid() {
           store.upsert(rec.orderId, { status: 'shipment_canceled' });
           await notifyMerchant(`🚫 Order ${rec.orderId} shipment CANCELED in Bosta — marked Cancelled on Ecwid.`);
           console.log(`[track] order ${rec.orderId} shipment canceled — Ecwid updated`);
-        } else if (isPostponed(st.value)) {
+        } else if (isPostponed(detail)) {
           // Only message the customer on a FRESH postponement — not every poll
           // cycle while Bosta keeps reporting the same "postponed" state.
-          const wasAlreadyPostponed = isPostponed(previousStateValue || '');
+          const wasAlreadyPostponed = isPostponed(previousDetail);
           if (!wasAlreadyPostponed) {
             const postponedCount = (rec.postponedCount || 0) + 1;
             store.upsert(rec.orderId, { postponedCount });
 
             const sent = await trySend(customer, POSTPONED_TEMPLATE, LANG, rec.orderId);
             await notifyMerchant(
-              `⏳ Order ${rec.orderId} POSTPONED to another day (Bosta: "${st.value}")${sent ? ' — notified the customer.' : POSTPONED_TEMPLATE ? ' — message send failed, see logs.' : ' — no POSTPONED_TEMPLATE_NAME set, customer NOT notified.'}`
+              `⏳ Order ${rec.orderId} POSTPONED to another day (Bosta: "${detail}")${sent ? ' — notified the customer.' : POSTPONED_TEMPLATE ? ' — message send failed, see logs.' : ' — no POSTPONED_TEMPLATE_NAME set, customer NOT notified.'}`
             );
             console.log(`[track] order ${rec.orderId} postponed (#${postponedCount}) — ${sent ? 'customer notified' : 'customer NOT notified'}`);
 
@@ -281,7 +292,7 @@ export async function trackFromEcwid() {
               try {
                 await sendTemplate(MERCHANT_ALERT_NUMBER, OWNER_ALERT_TEMPLATE, LANG, [
                   rec.orderNumber || rec.orderId,
-                  st.value,
+                  detail,
                 ]);
                 console.log(`[track] order ${rec.orderId} postponed again (#${postponedCount}) — alerted owner on ${MERCHANT_ALERT_NUMBER}`);
               } catch (e) {
@@ -292,11 +303,23 @@ export async function trackFromEcwid() {
             }
           }
           // keep status 'tracking' — keep watching for the next attempt
+        } else if (isCustomerRefused(detail)) {
+          // Genuine refusal (not a postponement) — this is what REJECTED_TEMPLATE
+          // is actually for: ask the customer the reason / offer a size fix.
+          if (!rec.exceptionNotified) {
+            await trySend(customer, REJECTED_TEMPLATE, LANG, rec.orderId);
+            store.upsert(rec.orderId, { exceptionNotified: true }); // keep status 'tracking' — keep watching
+            await notifyMerchant(`⚠️ Order ${rec.orderId} customer REFUSED the shipment (Bosta: "${detail}") — asked the reason / size fix. Still watching for delivered or returned.`);
+            console.log(`[track] order ${rec.orderId} customer refused — reason message sent (still tracking)`);
+          }
         } else if (needsAction(st.value) && !rec.exceptionNotified) {
+          // Fallback: an Exception whose detail text didn't match postponed or
+          // refused above (an unrecognized sub-reason) — still flag it so
+          // nothing silently falls through the cracks.
           await trySend(customer, REJECTED_TEMPLATE, LANG, rec.orderId);
           store.upsert(rec.orderId, { exceptionNotified: true }); // keep status 'tracking' — keep watching
-          await notifyMerchant(`⚠️ Order ${rec.orderId} hit a delivery problem — asked the customer the reason / size fix. Still watching for delivered or returned.`);
-          console.log(`[track] order ${rec.orderId} exception — reason message sent (still tracking)`);
+          await notifyMerchant(`⚠️ Order ${rec.orderId} hit a delivery problem (Bosta: "${detail}") — asked the customer the reason / size fix. Still watching for delivered or returned.`);
+          console.log(`[track] order ${rec.orderId} exception (unrecognized detail) — reason message sent (still tracking)`);
         }
         // otherwise still in transit (or exception already handled) — keep checking next interval
       } catch (err) {
