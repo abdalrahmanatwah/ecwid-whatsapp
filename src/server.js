@@ -28,6 +28,11 @@ const CONFIRM_MESSAGE =
 const CANCEL_MESSAGE =
   'تم إلغاء الأوردر. لو حصل ده بالخطأ، تقدر تعمل الأوردر تاني أو ترد على الرسالة دي.';
 
+// Replies to the Postponed template's "تم التواصل" / "لم يتم التواصل" buttons.
+const CONTACTED_MESSAGE = 'تمام، شكرًا لتأكيدك 🙏 لو احتجت أي حاجة تانية أنا موجود.';
+const NOT_CONTACTED_MESSAGE =
+  'تمام، آسفين على الإزعاج 🙏 جاري حل المشكلة مع شركة الشحن دلوقتي وهنرجعلك بأقرب وقت.';
+
 // Health check
 app.get('/', (_req, res) => res.send('Ecwid → WhatsApp order confirmation: running'));
 
@@ -115,9 +120,15 @@ function extractButtonPayload(msg) {
   return null;
 }
 
+// NOT_CONTACTED_ is checked before CONTACTED_ purely for clarity — their
+// prefixes don't actually overlap (different first letters), so order here
+// doesn't matter, but keeping the longer/more-specific one first avoids any
+// future foot-gun if a payload naming scheme ever gets close to another.
 function parsePayload(payload) {
   if (payload.startsWith('CONFIRM_')) return { action: 'confirm', orderId: payload.slice(8) };
   if (payload.startsWith('CANCEL_')) return { action: 'cancel', orderId: payload.slice(7) };
+  if (payload.startsWith('NOT_CONTACTED_')) return { action: 'not_contacted', orderId: payload.slice(14) };
+  if (payload.startsWith('CONTACTED_')) return { action: 'contacted', orderId: payload.slice(10) };
   return {};
 }
 
@@ -149,6 +160,24 @@ async function handleReply({ action, orderId, from }) {
     await sendText(from, CANCEL_MESSAGE);
     await notifyMerchant(`❌ Order ${orderId} was CANCELLED by the customer.`);
     console.log(`[reply] order ${orderId} cancelled`);
+    return;
+  }
+
+  // Reply to the Postponed template: did the shipping company actually
+  // contact the customer about the new delivery date? Doesn't touch the
+  // order's tracking `status` — just records the answer and replies.
+  if (action === 'contacted') {
+    store.upsert(orderId, { postponedContact: 'contacted', postponedContactAt: new Date().toISOString(), repliedBy: from });
+    await sendText(from, CONTACTED_MESSAGE);
+    console.log(`[reply] order ${orderId} postponed-contact: customer confirms contacted`);
+    return;
+  }
+
+  if (action === 'not_contacted') {
+    store.upsert(orderId, { postponedContact: 'not_contacted', postponedContactAt: new Date().toISOString(), repliedBy: from });
+    await sendText(from, NOT_CONTACTED_MESSAGE);
+    await notifyMerchant(`📞 Order ${orderId}: customer says the shipping company did NOT contact them about the postponement — please follow up with Bosta.`);
+    console.log(`[reply] order ${orderId} postponed-contact: customer says NOT contacted — merchant alerted`);
     return;
   }
 }
