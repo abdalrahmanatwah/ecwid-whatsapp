@@ -34,6 +34,11 @@ const REJECTED_TEMPLATE = process.env.REJECTED_TEMPLATE_NAME || '';
 // approved WhatsApp template (create/approve it in Meta Business Manager first),
 // since this can fire outside the 24h customer-service window.
 const POSTPONED_TEMPLATE = process.env.POSTPONED_TEMPLATE_NAME || '';
+// Sent to the CUSTOMER when an order gets auto-cancelled after a 2nd
+// postponement. Approved template (not sendText), since this fires from the
+// background poller — not from the customer tapping a button — so there's no
+// guaranteed-open 24h window to rely on.
+const POSTPONED_CANCEL_TEMPLATE = process.env.POSTPONED_CANCEL_TEMPLATE_NAME || '';
 const LANG = process.env.WHATSAPP_TEMPLATE_LANG || 'ar';
 const LOOK_EVERY_MS = Number(process.env.TRACK_LOOK_INTERVAL_MINUTES || 10) * 60_000;
 const STATUS_EVERY_MS = Number(process.env.BOSTA_STATUS_INTERVAL_MINUTES || 20) * 60_000;
@@ -318,6 +323,22 @@ export async function trackFromEcwid() {
               }
             } else if (postponedCount >= 2 && !OWNER_ALERT_TEMPLATE) {
               console.warn(`[track] order ${rec.orderId} postponed again (#${postponedCount}) but OWNER_ALERT_TEMPLATE_NAME isn't set — owner NOT alerted`);
+            }
+
+            // A SECOND postponement is treated as "this isn't working out" —
+            // auto-cancel the order (same fields the manual Cancel button
+            // uses) and tell the customer, instead of leaving it stuck in
+            // limbo waiting for a 3rd/4th postponement.
+            if (postponedCount >= 2) {
+              try { await updateOrder(rec.orderId, { paymentStatus: CANCEL_STATUS, fulfillmentStatus: CANCEL_FULFILLMENT_STATUS }); }
+              catch (e) { console.warn(`[track] couldn't set Ecwid cancelled for ${rec.orderId} after repeat postponement:`, e.message); }
+
+              const cancelSent = await trySend(customer, POSTPONED_CANCEL_TEMPLATE, LANG, rec.orderId);
+              store.upsert(rec.orderId, { status: 'cancelled' }); // stop polling Bosta for this order
+              await notifyMerchant(
+                `🚫 Order ${rec.orderId} auto-CANCELLED after a 2nd postponement${cancelSent ? ' — customer notified.' : POSTPONED_CANCEL_TEMPLATE ? ' — customer message failed, see logs.' : ' — no POSTPONED_CANCEL_TEMPLATE_NAME set, customer NOT notified.'}`
+              );
+              console.log(`[track] order ${rec.orderId} auto-cancelled after 2nd postponement`);
             }
           }
           // keep status 'tracking' — keep watching for the next attempt
