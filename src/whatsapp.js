@@ -4,6 +4,12 @@
 //   We attach a dynamic payload to each button so the reply carries the order ID.
 // - sendText: a free-form follow-up. Allowed because tapping a button opens the
 //   24-hour customer-service window.
+// - sendTemplate: any approved template by name, no buttons — for follow-ups
+//   that go out days later (outside the 24h window), where only templates work.
+// - sendTemplateWithButtons: same as sendTemplate, but for templates that HAVE
+//   quick-reply buttons (e.g. the Postponed template's "تم التواصل" / "لم يتم
+//   التواصل"). Generalizes the payload-per-button pattern sendPollTemplate uses,
+//   for templates where the button set/count isn't fixed.
 
 const VERSION = process.env.GRAPH_VERSION || 'v21.0';
 const PHONE_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
@@ -87,6 +93,36 @@ export async function sendTemplate(to, name, lang, bodyParams = []) {
       parameters: bodyParams.map((t) => ({ type: 'text', text: clean(t) })),
     });
   }
+  return send({
+    messaging_product: 'whatsapp',
+    to,
+    type: 'template',
+    template: { name, language: { code: lang }, components },
+  });
+}
+
+// Sends any approved template that has quick-reply buttons, attaching a
+// payload to each button in order (button 0 gets buttonPayloads[0], etc.) so
+// the reply tells us which button was tapped and for which order — same idea
+// as sendPollTemplate, but for templates whose button set isn't fixed/known
+// ahead of time (e.g. the Postponed template: "تم التواصل" / "لم يتم التواصل").
+export async function sendTemplateWithButtons(to, name, lang, { bodyParams = [], buttonPayloads = [] } = {}) {
+  const clean = (s) => String(s ?? '').replace(/\s+/g, ' ').trim() || '-';
+  const components = [];
+  if (bodyParams.length) {
+    components.push({
+      type: 'body',
+      parameters: bodyParams.map((t) => ({ type: 'text', text: clean(t) })),
+    });
+  }
+  buttonPayloads.forEach((payload, index) => {
+    components.push({
+      type: 'button',
+      sub_type: 'quick_reply',
+      index: String(index),
+      parameters: [{ type: 'payload', payload }],
+    });
+  });
   return send({
     messaging_product: 'whatsapp',
     to,
