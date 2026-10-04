@@ -104,8 +104,13 @@ function extractTracking(order) {
 
 // Send a template but never throw — a failed/unapproved template must not block
 // the order from being marked done (otherwise it retries forever).
+// FIX: no longer fails silently — logs WHY nothing was sent when the template
+// env var is empty or there's no customer number.
 async function trySend(customer, template, lang, orderId) {
-  if (!template || !customer) return false;
+  if (!template || !customer) {
+    console.warn(`[track] message NOT sent for ${orderId}: ${!template ? 'template env var is empty' : 'no customer number on the order'}`);
+    return false;
+  }
   try { await sendTemplate(customer, template, lang); return true; }
   catch (e) { console.warn(`[track] message send failed for ${orderId} (template ${template}):`, e.message); return false; }
 }
@@ -261,10 +266,32 @@ export async function trackFromEcwid() {
       if (ms(rec.lastStatusCheck) < STATUS_EVERY_MS) continue;
       store.upsert(rec.orderId, { lastStatusCheck: new Date().toISOString() });
 
+      // FIX: the "not found / 400 / 404" give-up rule now applies ONLY to the
+      // Bosta lookup itself. Before, it wrapped the whole handler, so an
+      // unrelated error (e.g. from a message send or notifyMerchant) containing
+      // "400" or "not found" would mark the order 'tracking_gone' and it would
+      // never receive the delivered offer.
+      let st;
       try {
-        const st = await getDeliveryState(rec.bostaTracking);
-        if (!st) continue;
+        st = await getDeliveryState(rec.bostaTracking);
+      } catch (err) {
+        if (/not found|\b400\b|\b404\b/i.test(err.message)) {
+          store.upsert(rec.orderId, { status: 'tracking_gone', shipError: err.message });
+          console.warn(`[track] ${rec.orderId} not found in Bosta — stopped checking`);
+        } else {
+          console.warn(`[track] status check failed for ${rec.orderId}:`, err.message);
+        }
+        continue;
+      }
 
+      // FIX: was a silent `continue` — now logs, so an order that Bosta returns
+      // nothing for no longer disappears from the logs without a trace.
+      if (!st) {
+        console.warn(`[track] order ${rec.orderId}: Bosta returned no state for ${rec.bostaTracking} — skipping this cycle`);
+        continue;
+      }
+
+      try {
         // Remember what the state was BEFORE this check, so we can tell a brand
         // new postponement apart from "still postponed from last time we looked".
         const previousDetail = rec.lastStateDetail || '';
@@ -276,10 +303,12 @@ export async function trackFromEcwid() {
         if (isDelivered(st.value)) {
           try { await updateOrder(rec.orderId, { fulfillmentStatus: DELIVERED_STATUS }); }
           catch (e) { console.warn(`[track] couldn't set Ecwid ${DELIVERED_STATUS} for ${rec.orderId}:`, e.message); }
-          await trySend(customer, DELIVERED_TEMPLATE, LANG, rec.orderId);
+          const offerSent = await trySend(customer, DELIVERED_TEMPLATE, LANG, rec.orderId);
           store.upsert(rec.orderId, { status: 'delivered' });
-          await notifyMerchant(`📦 Order ${rec.orderId} DELIVERED — marked Delivered on Ecwid and sent the 100 EGP offer.`);
-          console.log(`[track] order ${rec.orderId} delivered — Ecwid updated + offer sent`);
+          // FIX: the message/log now say the truth — whether the offer was
+          // actually sent, instead of always claiming it was.
+          await notifyMerchant(`📦 Order ${rec.orderId} DELIVERED — marked Delivered on Ecwid${offerSent ? ' and sent the 100 EGP offer.' : ' but the 100 EGP offer was NOT sent (see logs).'}`);
+          console.log(`[track] order ${rec.orderId} delivered — Ecwid updated${offerSent ? ' + offer sent' : ', offer NOT sent'}`);
         } else if (isReturned(st.value)) {
           const askNow = REJECTED_TEMPLATE && customer && !rec.exceptionNotified;
           if (askNow) await trySend(customer, REJECTED_TEMPLATE, LANG, rec.orderId);
@@ -362,12 +391,10 @@ export async function trackFromEcwid() {
         }
         // otherwise still in transit (or exception already handled) — keep checking next interval
       } catch (err) {
-        if (/not found|\b400\b|\b404\b/i.test(err.message)) {
-          store.upsert(rec.orderId, { status: 'tracking_gone', shipError: err.message });
-          console.warn(`[track] ${rec.orderId} not found in Bosta — stopped checking`);
-        } else {
-          console.warn(`[track] status check failed for ${rec.orderId}:`, err.message);
-        }
+        // FIX: an error while HANDLING the state no longer changes the order's
+        // status (it used to be able to flip it to 'tracking_gone'). The order
+        // stays 'tracking' and is retried on the next cycle.
+        console.warn(`[track] handling failed for ${rec.orderId} (kept as 'tracking', will retry):`, err.message);
       }
       continue;
     }
