@@ -2,6 +2,10 @@
 // the WhatsApp Confirm/Cancel poll. Idempotency is handled by the store, so an
 // order is never messaged twice. Failed sends are tracked and retried every
 // cycle until they succeed or hit a safety cap.
+//
+// Each step of a cycle is isolated in its own try/catch, so a failure in one
+// step (e.g. Ecwid search, auto-ship, a notify error) can never stop the
+// delivery-status tracking step (trackFromEcwid) from running.
 
 import { searchOrders, getOrder, extractOrderInfo } from './ecwid.js';
 import { sendPollTemplate } from './whatsapp.js';
@@ -63,31 +67,39 @@ async function pollOnce() {
   }
 
   // 1) Discover newly placed orders (narrow window so we never touch old orders).
-  const createdFrom = lastCheck - OVERLAP_SEC;
-  const orders = await searchOrders(createdFrom);
+  //    The discovery cursor only advances if the search succeeded.
+  try {
+    const createdFrom = lastCheck - OVERLAP_SEC;
+    const orders = await searchOrders(createdFrom);
 
-  for (const summary of orders) {
-    const orderId = String(summary.id ?? summary.orderId ?? summary.orderNumber);
-    if (!orderId || orderId === 'undefined') continue;
-    if (store.has(orderId)) continue; // already seen (sent, failed, no_phone, etc.)
-    await attemptSend(orderId, {}, false);
+    for (const summary of orders) {
+      const orderId = String(summary.id ?? summary.orderId ?? summary.orderNumber);
+      if (!orderId || orderId === 'undefined') continue;
+      if (store.has(orderId)) continue; // already seen (sent, failed, no_phone, etc.)
+      await attemptSend(orderId, {}, false);
+    }
+
+    store.setMeta('lastCheckUnix', nowUnix());
+  } catch (err) {
+    console.error('[poll] discovery step failed:', err.message);
   }
 
-  // Advance the discovery cursor now that new orders are recorded.
-  store.setMeta('lastCheckUnix', nowUnix());
-
   // 2) Retry every order still stuck in "send_failed", until it works or ages out.
-  for (const rec of store.list()) {
-    if (rec.status !== 'send_failed') continue;
+  try {
+    for (const rec of store.list()) {
+      if (rec.status !== 'send_failed') continue;
 
-    const startedAt = new Date(rec.firstFailedAt || rec.updatedAt || Date.now()).getTime();
-    const ageHours = (Date.now() - startedAt) / 3_600_000;
-    if (ageHours > MAX_RETRY_HOURS) {
-      store.upsert(rec.orderId, { status: 'send_failed_giveup' });
-      console.warn(`[poll] giving up on order ${rec.orderId} after ${MAX_RETRY_HOURS}h (${rec.attempts} attempts)`);
-      continue;
+      const startedAt = new Date(rec.firstFailedAt || rec.updatedAt || Date.now()).getTime();
+      const ageHours = (Date.now() - startedAt) / 3_600_000;
+      if (ageHours > MAX_RETRY_HOURS) {
+        store.upsert(rec.orderId, { status: 'send_failed_giveup' });
+        console.warn(`[poll] giving up on order ${rec.orderId} after ${MAX_RETRY_HOURS}h (${rec.attempts} attempts)`);
+        continue;
+      }
+      await attemptSend(rec.orderId, rec, true);
     }
-    await attemptSend(rec.orderId, rec, true);
+  } catch (err) {
+    console.error('[poll] retry step failed:', err.message);
   }
 
   // 3) Auto-ship: confirmed orders past their grace window, shipped via Bosta
@@ -96,34 +108,51 @@ async function pollOnce() {
   //    it (status 'ship_failed', which the bridge below already knows to treat
   //    as "waiting for someone to paste a tracking number").
   if (AUTO_SHIP) {
-    for (const rec of store.list()) {
-      if (rec.status !== 'confirmed') continue;
-      const elapsedMin = (Date.now() - new Date(rec.confirmedAt || 0).getTime()) / 60_000;
-      if (elapsedMin < SHIP_DELAY_MIN) continue; // still inside the cancellation window
+    try {
+      for (const rec of store.list()) {
+        if (rec.status !== 'confirmed') continue;
+        const elapsedMin = (Date.now() - new Date(rec.confirmedAt || 0).getTime()) / 60_000;
+        if (elapsedMin < SHIP_DELAY_MIN) continue; // still inside the cancellation window
 
-      try {
-        const { trackingNumber } = await autoShipOrder(rec.orderId);
-        store.upsert(rec.orderId, {
-          status: 'tracking',
-          bostaTracking: trackingNumber,
-          trackingFoundAt: new Date().toISOString(),
-        });
-        await notifyMerchant(`🚚 Order ${rec.orderId} auto-shipped via Bosta — tracking ${trackingNumber}.`);
-        console.log(`[autoship] order ${rec.orderId} shipped, tracking ${trackingNumber}`);
-      } catch (err) {
-        store.upsert(rec.orderId, { status: 'ship_failed', shipError: err.message });
-        await notifyMerchant(`⚠️ Order ${rec.orderId} auto-ship skipped (${err.message}) — needs a manual tracking number.`);
-        console.warn(`[autoship] order ${rec.orderId} not shipped: ${err.message}`);
+        try {
+          const { trackingNumber } = await autoShipOrder(rec.orderId);
+          store.upsert(rec.orderId, {
+            status: 'tracking',
+            bostaTracking: trackingNumber,
+            trackingFoundAt: new Date().toISOString(),
+          });
+          await notifyMerchant(`🚚 Order ${rec.orderId} auto-shipped via Bosta — tracking ${trackingNumber}.`);
+          console.log(`[autoship] order ${rec.orderId} shipped, tracking ${trackingNumber}`);
+        } catch (err) {
+          store.upsert(rec.orderId, { status: 'ship_failed', shipError: err.message });
+          console.warn(`[autoship] order ${rec.orderId} not shipped: ${err.message}`);
+          try {
+            await notifyMerchant(`⚠️ Order ${rec.orderId} auto-ship skipped (${err.message}) — needs a manual tracking number.`);
+          } catch (e) {
+            console.warn('[autoship] notifyMerchant failed:', e.message);
+          }
+        }
       }
+    } catch (err) {
+      console.error('[poll] autoship step failed:', err.message);
     }
   }
 
   // 4) Bridge: pick up Bosta tracking numbers (auto-ship above, or pasted in
-  //    manually) and poll their delivery status to send Delivered/Exception messages.
-  await trackFromEcwid();
+  //    manually) and poll their delivery status to send Delivered/Postponed/
+  //    Exception messages. Must run no matter what happened above.
+  try {
+    await trackFromEcwid();
+  } catch (err) {
+    console.error('[poll] trackFromEcwid failed:', err.message);
+  }
 
   // 5) Abandoned-cart "last piece" nudges (self-throttled to its own interval).
-  await checkAbandonedCarts();
+  try {
+    await checkAbandonedCarts();
+  } catch (err) {
+    console.error('[poll] abandoned carts step failed:', err.message);
+  }
 }
 
 export function startPolling(intervalSec) {
