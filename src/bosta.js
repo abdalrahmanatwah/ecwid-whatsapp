@@ -17,7 +17,7 @@ function authHeaders() {
   return { Authorization: API_KEY, 'Content-Type': 'application/json' };
 }
 
-// Returns { code, value, detail } for a delivery.
+// Returns { code, value, detail, raw } for a delivery.
 //  - value:  Bosta's coarse, human-readable state (e.g. "Delivered", "Exception").
 //            "Exception" covers several very different situations (postponed,
 //            customer refused, wrong address, etc.) under the SAME code/value.
@@ -27,6 +27,8 @@ function authHeaders() {
 //            receive the shipment". This is what actually tells two
 //            "Exception" deliveries apart — use this, not `value`, to decide
 //            what message (if any) to send the customer.
+//  - raw:    the full Bosta payload, kept for diagnosing unrecognized
+//            Exceptions (so we can see where the real reason is written).
 // Throws on HTTP errors so the caller can fail safe (e.g. stop tracking a
 // delivery Bosta reports as not found).
 export async function getDeliveryState(trackingNumber) {
@@ -45,6 +47,7 @@ export async function getDeliveryState(trackingNumber) {
     code: state.code ?? state.stateCode ?? null,
     value: state.value || state.state || d?.maskedState || '',
     detail: d?.maskedState || state.value || state.state || '',
+    raw: d,
   };
 }
 
