@@ -55,6 +55,10 @@ const CANCEL_FULFILLMENT_STATUS = process.env.CANCEL_FULFILLMENT_STATUS || 'WILL
 const TRACKING_REMINDER_EVERY_MS = Number(process.env.TRACKING_REMINDER_INTERVAL_HOURS || 24) * 3_600_000;
 const TRACKING_REMINDER_MIN_AGE_HOURS = Number(process.env.TRACKING_REMINDER_MIN_AGE_HOURS || 12);
 
+// Guard against counting the SAME postponement twice (e.g. Bosta's detail text
+// flickers to a bare "Exception" between two polls).
+const POSTPONE_RECOUNT_GUARD_MS = 12 * 3_600_000;
+
 const ms = (iso) => (iso ? Date.now() - new Date(iso).getTime() : Infinity);
 const days = (iso) => (iso ? (Date.now() - new Date(iso).getTime()) / 86_400_000 : 0);
 const hours = (iso) => (iso ? (Date.now() - new Date(iso).getTime()) / 3_600_000 : 0);
@@ -75,9 +79,11 @@ const needsAction = (v) => /\bexception\b|awaiting/i.test(v);
 //   "Postponed - the client requested postponement for another day"
 //   "Cancellation - the customer refuses to receive the shipment"
 // These patterns are confirmed from real orders; override via env if Bosta's
-// wording ever changes.
+// wording ever changes. Arabic wording is included in case Bosta returns the
+// state text in Arabic.
 const POSTPONED_PATTERN = new RegExp(
-  process.env.POSTPONED_STATUS_PATTERN || 'postpon|reschedul',
+  process.env.POSTPONED_STATUS_PATTERN ||
+    'postpon|reschedul|تأجيل|تاجيل|مؤجل|إعادة جدولة|اعادة جدولة',
   'i'
 );
 const isPostponed = (v) => POSTPONED_PATTERN.test(v);
@@ -104,8 +110,8 @@ function extractTracking(order) {
 
 // Send a template but never throw — a failed/unapproved template must not block
 // the order from being marked done (otherwise it retries forever).
-// FIX: no longer fails silently — logs WHY nothing was sent when the template
-// env var is empty or there's no customer number.
+// Logs WHY nothing was sent when the template env var is empty or there's no
+// customer number.
 async function trySend(customer, template, lang, orderId) {
   if (!template || !customer) {
     console.warn(`[track] message NOT sent for ${orderId}: ${!template ? 'template env var is empty' : 'no customer number on the order'}`);
@@ -120,7 +126,10 @@ async function trySend(customer, template, lang, orderId) {
 // new date?). Payloads carry the order ID so server.js's webhook knows which
 // order the tap belongs to — handled there in CONTACTED_ / NOT_CONTACTED_.
 async function trySendPostponed(customer, orderNumber, orderId) {
-  if (!POSTPONED_TEMPLATE || !customer) return false;
+  if (!POSTPONED_TEMPLATE || !customer) {
+    console.warn(`[track] postponed message NOT sent for ${orderId}: ${!POSTPONED_TEMPLATE ? 'POSTPONED_TEMPLATE_NAME is empty' : 'no customer number on the order'}`);
+    return false;
+  }
   try {
     await sendTemplateWithButtons(customer, POSTPONED_TEMPLATE, LANG, {
       bodyParams: [orderNumber || orderId],
@@ -266,11 +275,9 @@ export async function trackFromEcwid() {
       if (ms(rec.lastStatusCheck) < STATUS_EVERY_MS) continue;
       store.upsert(rec.orderId, { lastStatusCheck: new Date().toISOString() });
 
-      // FIX: the "not found / 400 / 404" give-up rule now applies ONLY to the
-      // Bosta lookup itself. Before, it wrapped the whole handler, so an
-      // unrelated error (e.g. from a message send or notifyMerchant) containing
-      // "400" or "not found" would mark the order 'tracking_gone' and it would
-      // never receive the delivered offer.
+      // The "not found / 400 / 404" give-up rule applies ONLY to the Bosta
+      // lookup itself, so an unrelated error (e.g. from a message send or
+      // notifyMerchant) can never mark the order 'tracking_gone'.
       let st;
       try {
         st = await getDeliveryState(rec.bostaTracking);
@@ -284,8 +291,6 @@ export async function trackFromEcwid() {
         continue;
       }
 
-      // FIX: was a silent `continue` — now logs, so an order that Bosta returns
-      // nothing for no longer disappears from the logs without a trace.
       if (!st) {
         console.warn(`[track] order ${rec.orderId}: Bosta returned no state for ${rec.bostaTracking} — skipping this cycle`);
         continue;
@@ -305,8 +310,6 @@ export async function trackFromEcwid() {
           catch (e) { console.warn(`[track] couldn't set Ecwid ${DELIVERED_STATUS} for ${rec.orderId}:`, e.message); }
           const offerSent = await trySend(customer, DELIVERED_TEMPLATE, LANG, rec.orderId);
           store.upsert(rec.orderId, { status: 'delivered' });
-          // FIX: the message/log now say the truth — whether the offer was
-          // actually sent, instead of always claiming it was.
           await notifyMerchant(`📦 Order ${rec.orderId} DELIVERED — marked Delivered on Ecwid${offerSent ? ' and sent the 100 EGP offer.' : ' but the 100 EGP offer was NOT sent (see logs).'}`);
           console.log(`[track] order ${rec.orderId} delivered — Ecwid updated${offerSent ? ' + offer sent' : ', offer NOT sent'}`);
         } else if (isReturned(st.value)) {
@@ -328,9 +331,13 @@ export async function trackFromEcwid() {
           // Only message the customer on a FRESH postponement — not every poll
           // cycle while Bosta keeps reporting the same "postponed" state.
           const wasAlreadyPostponed = isPostponed(previousDetail);
-          if (!wasAlreadyPostponed) {
+          // Extra guard: if Bosta's detail flickered to a bare "Exception"
+          // between two polls, don't count the same postponement twice.
+          const recentlyCounted = rec.lastPostponedAt && ms(rec.lastPostponedAt) < POSTPONE_RECOUNT_GUARD_MS;
+
+          if (!wasAlreadyPostponed && !recentlyCounted) {
             const postponedCount = (rec.postponedCount || 0) + 1;
-            store.upsert(rec.orderId, { postponedCount });
+            store.upsert(rec.orderId, { postponedCount, lastPostponedAt: new Date().toISOString() });
 
             const sent = await trySendPostponed(customer, rec.orderNumber, rec.orderId);
             await notifyMerchant(
@@ -355,19 +362,21 @@ export async function trackFromEcwid() {
             }
 
             // A SECOND postponement is treated as "this isn't working out" —
-            // auto-cancel the order (same fields the manual Cancel button
-            // uses) and tell the customer, instead of leaving it stuck in
-            // limbo waiting for a 3rd/4th postponement.
-            if (postponedCount >= 2) {
+            // auto-cancel the order in Ecwid (same fields the manual Cancel
+            // button uses) and tell the customer. The order deliberately STAYS
+            // in 'tracking' (flagged autoCancelled) so that if Bosta still
+            // delivers or returns the shipment we notice it: delivered offer,
+            // return restock, etc. still work.
+            if (postponedCount >= 2 && !rec.autoCancelled) {
               try { await updateOrder(rec.orderId, { paymentStatus: CANCEL_STATUS, fulfillmentStatus: CANCEL_FULFILLMENT_STATUS }); }
               catch (e) { console.warn(`[track] couldn't set Ecwid cancelled for ${rec.orderId} after repeat postponement:`, e.message); }
 
               const cancelSent = await trySend(customer, POSTPONED_CANCEL_TEMPLATE, LANG, rec.orderId);
-              store.upsert(rec.orderId, { status: 'cancelled' }); // stop polling Bosta for this order
+              store.upsert(rec.orderId, { autoCancelled: true }); // NOT status:'cancelled' — keep tracking
               await notifyMerchant(
-                `🚫 Order ${rec.orderId} auto-CANCELLED after a 2nd postponement${cancelSent ? ' — customer notified.' : POSTPONED_CANCEL_TEMPLATE ? ' — customer message failed, see logs.' : ' — no POSTPONED_CANCEL_TEMPLATE_NAME set, customer NOT notified.'}`
+                `🚫 Order ${rec.orderId} auto-CANCELLED in Ecwid after a 2nd postponement (الشحنة لسه شغالة في Bosta — الغيها يدوياً لو عايز)${cancelSent ? ' — customer notified.' : POSTPONED_CANCEL_TEMPLATE ? ' — customer message failed, see logs.' : ' — no POSTPONED_CANCEL_TEMPLATE_NAME set, customer NOT notified.'}`
               );
-              console.log(`[track] order ${rec.orderId} auto-cancelled after 2nd postponement`);
+              console.log(`[track] order ${rec.orderId} auto-cancelled in Ecwid after 2nd postponement (still tracking)`);
             }
           }
           // keep status 'tracking' — keep watching for the next attempt
@@ -380,20 +389,25 @@ export async function trackFromEcwid() {
             await notifyMerchant(`⚠️ Order ${rec.orderId} customer REFUSED the shipment (Bosta: "${detail}") — asked the reason / size fix. Still watching for delivered or returned.`);
             console.log(`[track] order ${rec.orderId} customer refused — reason message sent (still tracking)`);
           }
-        } else if (needsAction(st.value) && !rec.exceptionNotified) {
-          // Fallback: an Exception whose detail text didn't match postponed or
-          // refused above (an unrecognized sub-reason) — still flag it so
-          // nothing silently falls through the cracks.
-          await trySend(customer, REJECTED_TEMPLATE, LANG, rec.orderId);
-          store.upsert(rec.orderId, { exceptionNotified: true }); // keep status 'tracking' — keep watching
-          await notifyMerchant(`⚠️ Order ${rec.orderId} hit a delivery problem (Bosta: "${detail}") — asked the customer the reason / size fix. Still watching for delivered or returned.`);
-          console.log(`[track] order ${rec.orderId} exception (unrecognized detail) — reason message sent (still tracking)`);
+        } else if (needsAction(st.value)) {
+          // An Exception whose detail text didn't match postponed or refused
+          // (e.g. a bare "Exception" like QA9NA). Don't blindly send the
+          // customer a "rejection reason" message — log the raw Bosta payload
+          // once and alert the merchant, so the real reason can be identified.
+          if (!rec.unknownExceptionLogged) {
+            console.warn(`[track] ${rec.orderId} unrecognized exception raw:`, JSON.stringify({
+              state: st.raw?.state,
+              maskedState: st.raw?.maskedState,
+              keys: Object.keys(st.raw || {}),
+            }).slice(0, 800));
+            store.upsert(rec.orderId, { unknownExceptionLogged: true });
+            await notifyMerchant(`⚠️ Order ${rec.orderId} Exception غير معروف (Bosta: "${detail}", code ${st.code}) — راجعه يدوياً.`);
+          }
         }
         // otherwise still in transit (or exception already handled) — keep checking next interval
       } catch (err) {
-        // FIX: an error while HANDLING the state no longer changes the order's
-        // status (it used to be able to flip it to 'tracking_gone'). The order
-        // stays 'tracking' and is retried on the next cycle.
+        // An error while HANDLING the state never changes the order's status.
+        // The order stays 'tracking' and is retried on the next cycle.
         console.warn(`[track] handling failed for ${rec.orderId} (kept as 'tracking', will retry):`, err.message);
       }
       continue;
