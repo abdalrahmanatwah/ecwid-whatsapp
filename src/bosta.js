@@ -43,10 +43,35 @@ export async function getDeliveryState(trackingNumber) {
   const data = await res.json();
   const d = data?.data || data;
   const state = d?.state || {};
+  const value = state.value || state.state || d?.maskedState || '';
+
+  // When the state is "Exception", Bosta writes the real reason inside
+  // state.exception[] (e.g. "Postponed - the customer requested postponement
+  // for another day.", with a scheduledAt date) while maskedState is often
+  // empty or just "Exception". Use the LATEST exception entry — and only when
+  // the current state really is an Exception, so a stale entry from an earlier
+  // attempt can't leak into a later "Out for delivery" state.
+  let exReason = '';
+  let exceptionKey = '';
+  let scheduledAt = null;
+  if (/exception/i.test(value) && Array.isArray(state.exception) && state.exception.length) {
+    const latest = [...state.exception].sort(
+      (a, b) => new Date(a?.time || 0) - new Date(b?.time || 0)
+    ).pop();
+    exReason = latest?.reason || '';
+    exceptionKey = latest?.time || '';      // identifies THIS attempt's exception
+    scheduledAt = latest?.scheduledAt || null; // new delivery date, if any
+  }
+
+  const masked = d?.maskedState || '';
+  const maskedIsGeneric = !masked || /^\s*exception\s*$/i.test(masked);
+
   return {
     code: state.code ?? state.stateCode ?? null,
-    value: state.value || state.state || d?.maskedState || '',
-    detail: d?.maskedState || state.value || state.state || '',
+    value,
+    detail: exReason && maskedIsGeneric ? exReason : (masked || exReason || state.value || state.state || ''),
+    exceptionKey,
+    scheduledAt,
     raw: d,
   };
 }
