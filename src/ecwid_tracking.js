@@ -330,14 +330,24 @@ export async function trackFromEcwid() {
         } else if (isPostponed(detail)) {
           // Only message the customer on a FRESH postponement — not every poll
           // cycle while Bosta keeps reporting the same "postponed" state.
-          const wasAlreadyPostponed = isPostponed(previousDetail);
-          // Extra guard: if Bosta's detail flickered to a bare "Exception"
-          // between two polls, don't count the same postponement twice.
+          // Best signal: the timestamp of the latest exception entry — a new
+          // postponement always has a new one. Fall back to comparing the
+          // previous detail text when Bosta didn't give a timestamp.
+          const exKey = st.exceptionKey || '';
+          const wasAlreadyPostponed = exKey
+            ? rec.lastExceptionKey === exKey
+            : isPostponed(previousDetail);
+          // Extra guard against counting the same postponement twice.
           const recentlyCounted = rec.lastPostponedAt && ms(rec.lastPostponedAt) < POSTPONE_RECOUNT_GUARD_MS;
 
           if (!wasAlreadyPostponed && !recentlyCounted) {
             const postponedCount = (rec.postponedCount || 0) + 1;
-            store.upsert(rec.orderId, { postponedCount, lastPostponedAt: new Date().toISOString() });
+            store.upsert(rec.orderId, {
+              postponedCount,
+              lastPostponedAt: new Date().toISOString(),
+              lastExceptionKey: exKey,
+              scheduledAt: st.scheduledAt || null,
+            });
 
             const sent = await trySendPostponed(customer, rec.orderNumber, rec.orderId);
             await notifyMerchant(
