@@ -35,6 +35,9 @@ const MAX_PER_RUN = Number(process.env.CART_MAX_PER_RUN ?? 30);   // safety cap 
 const SEND_GAP_MS = Number(process.env.CART_SEND_GAP_MS ?? 1500); // pause between sends
 const MAX_ATTEMPTS = 3;
 const COUNTRY    = process.env.DEFAULT_COUNTRY_CODE || '20';
+// TEST MODE: when set, offers go ONLY to this phone number (everyone else is
+// skipped). Leave empty in production to send to all abandoned carts.
+const ONLY_PHONE = normalizePhone(process.env.CART_ONLY_PHONE || '', process.env.DEFAULT_COUNTRY_CODE || '20');
 const DEBUG      = process.env.DEBUG === 'true';
 const GIFT_NOTE  = process.env.CART_GIFT_NOTE || '🎁 هدية مع الأوردر: فرش طبي مجاناً (عرض السلة المتروكة) — لا تنسَ إضافته في الشحنة';
 
@@ -136,6 +139,9 @@ export async function checkAbandonedCarts() {
       if (DEBUG) console.log(`[cart][debug] ${cartId}: no phone — skipped`);
       continue;
     }
+
+    // Test mode: only the designated phone gets an offer
+    if (ONLY_PHONE && phone !== ONLY_PHONE) continue;
 
     // Customer already has a live order → don't nag
     if (hasActiveOrder(phone)) {
