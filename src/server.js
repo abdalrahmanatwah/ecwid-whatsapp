@@ -10,6 +10,7 @@ import { notifyMerchant, merchantNumber } from './notify.js';
 import { dashboardRouter } from './dashboard.js';
 import { requireAuth } from './auth.js';
 import * as qpOrders from './qp_orders.js';
+import { handleCartButton } from './abandoned_carts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -106,6 +107,15 @@ app.post('/webhooks/whatsapp', async (req, res) => {
         for (const msg of messages) {
           const payload = extractButtonPayload(msg);
           if (!payload) continue;
+
+          // Abandoned-cart offer buttons (CART_CONFIRM_<cartId> / CART_CANCEL_<cartId>).
+          // Handled in abandoned_carts.js; returns true when it recognized the payload.
+          try {
+            if (await handleCartButton(payload, msg.from)) continue;
+          } catch (e) {
+            console.error('[whatsapp] cart button handler error:', e.message);
+            continue;
+          }
 
           const { action, orderId } = parsePayload(payload);
           if (!action || !orderId) continue;
