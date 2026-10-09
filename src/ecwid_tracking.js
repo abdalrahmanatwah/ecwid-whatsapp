@@ -246,6 +246,15 @@ export async function trackFromEcwid() {
       }
       try {
         const order = await getOrder(rec.orderId);
+
+        // Cancelled by hand in Ecwid (e.g. WILL_NOT_DELIVER) → stop waiting for
+        // a tracking number that will never come, and keep it out of the digest.
+        if (order.paymentStatus === CANCEL_STATUS || order.fulfillmentStatus === CANCEL_FULFILLMENT_STATUS) {
+          store.upsert(rec.orderId, { status: 'cancelled' });
+          console.log(`[track] order ${rec.orderId} is cancelled in Ecwid — stopped looking for tracking`);
+          continue;
+        }
+
         const tn = extractTracking(order);
         if (process.env.TRACK_DEBUG === 'true') {
           console.log(`[track][debug] ${rec.orderId}: extracted tracking="${tn}" | fulfillmentStatus="${order.fulfillmentStatus || ''}" | shipments=${JSON.stringify(order.shipments || [])}`);
