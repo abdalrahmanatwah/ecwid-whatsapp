@@ -120,6 +120,8 @@ export async function checkAbandonedCarts() {
   const offers = loadOffers();
   let sent = 0;
   const skip = { handled: 0, recovered: 0, noItems: 0, ageWindow: 0, noPhone: 0, testMode: 0, activeOrder: 0 };
+  const handledBy = {};      // breakdown of the already-handled carts by their stored status
+  let sampleError = '';      // last stored send error, if any, to explain failures
 
   // One-time hint about which fields Ecwid actually returns for a cart
   // (keys only — no customer data), so a missing phone is easy to diagnose.
@@ -136,7 +138,12 @@ export async function checkAbandonedCarts() {
     if (!cartId) continue;
 
     const prev = offers[cartId];
-    if (prev && (prev.status !== 'failed' || (prev.attempts || 0) >= MAX_ATTEMPTS)) { skip.handled++; continue; }
+    if (prev && (prev.status !== 'failed' || (prev.attempts || 0) >= MAX_ATTEMPTS)) {
+      skip.handled++;
+      handledBy[prev.status] = (handledBy[prev.status] || 0) + 1;
+      if (prev.lastError && !sampleError) sampleError = prev.lastError;
+      continue;
+    }
 
     // Already recovered into a real order
     if (cart.orderId || cart.order?.id) { skip.recovered++; continue; }
@@ -196,6 +203,7 @@ export async function checkAbandonedCarts() {
     JSON.stringify(skip),
     ONLY_PHONE ? `| TEST MODE (only ${ONLY_PHONE})` : ''
   );
+  if (skip.handled) console.log('[cart] already-handled breakdown:', JSON.stringify(handledBy), sampleError ? `| last error: ${sampleError}` : '');
 }
 
 // ─── Button handler — call this from server.js's WhatsApp webhook ────────────
