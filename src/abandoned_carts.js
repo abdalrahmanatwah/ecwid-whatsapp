@@ -99,7 +99,13 @@ function hasShippingAddress(cart) {
 
 // ─── Main: send the offer to every abandoned cart ────────────────────────────
 export async function checkAbandonedCarts() {
-  if (!TEMPLATE) return;                        // feature disabled
+  if (!TEMPLATE) {                              // feature disabled
+    if (!globalThis.__cartDisabledLogged) {
+      globalThis.__cartDisabledLogged = true;
+      console.log('[cart] disabled — CART_TEMPLATE_NAME is empty');
+    }
+    return;
+  }
   if (Date.now() - lastRun < INTERVAL) return;  // too soon
   lastRun = Date.now();
 
@@ -113,38 +119,51 @@ export async function checkAbandonedCarts() {
 
   const offers = loadOffers();
   let sent = 0;
+  const skip = { handled: 0, recovered: 0, noItems: 0, ageWindow: 0, noPhone: 0, testMode: 0, activeOrder: 0 };
+
+  // One-time hint about which fields Ecwid actually returns for a cart
+  // (keys only — no customer data), so a missing phone is easy to diagnose.
+  if (carts.length && !globalThis.__cartShapeLogged) {
+    globalThis.__cartShapeLogged = true;
+    const c = carts[0];
+    console.log('[cart] sample cart keys:', Object.keys(c).join(','),
+      '| shippingPerson keys:', Object.keys(c.shippingPerson || {}).join(',') || '(none)',
+      '| billingPerson keys:', Object.keys(c.billingPerson || {}).join(',') || '(none)');
+  }
 
   for (const cart of carts) {
     const cartId = cartIdOf(cart);
     if (!cartId) continue;
 
     const prev = offers[cartId];
-    if (prev && (prev.status !== 'failed' || (prev.attempts || 0) >= MAX_ATTEMPTS)) continue;
+    if (prev && (prev.status !== 'failed' || (prev.attempts || 0) >= MAX_ATTEMPTS)) { skip.handled++; continue; }
 
     // Already recovered into a real order
-    if (cart.orderId || cart.order?.id) continue;
+    if (cart.orderId || cart.order?.id) { skip.recovered++; continue; }
 
     const items = Array.isArray(cart.items) ? cart.items : [];
-    if (!items.length) continue;
+    if (!items.length) { skip.noItems++; continue; }
 
     // Age window
     const createdRaw = cart.createDate || cart.updateDate;
     const created = createdRaw ? new Date(createdRaw).getTime() : NaN;
     const age = Date.now() - created;
-    if (!Number.isFinite(age) || age < MIN_AGE_MS || age > MAX_AGE_MS) continue;
+    if (!Number.isFinite(age) || age < MIN_AGE_MS || age > MAX_AGE_MS) { skip.ageWindow++; continue; }
 
     // Phone
     const phone = normalizePhone(cartPhone(cart), COUNTRY);
     if (!phone) {
+      skip.noPhone++;
       if (DEBUG) console.log(`[cart][debug] ${cartId}: no phone — skipped`);
       continue;
     }
 
     // Test mode: only the designated phone gets an offer
-    if (ONLY_PHONE && phone !== ONLY_PHONE) continue;
+    if (ONLY_PHONE && phone !== ONLY_PHONE) { skip.testMode++; continue; }
 
     // Customer already has a live order → don't nag
     if (hasActiveOrder(phone)) {
+      skip.activeOrder++;
       if (DEBUG) console.log(`[cart][debug] ${cartId}: ${phone} already has an active order — skipped`);
       continue;
     }
@@ -171,7 +190,12 @@ export async function checkAbandonedCarts() {
     }
   }
 
-  if (sent) console.log(`[cart] cycle done — ${sent} offer(s) sent`);
+  // Always log a summary, so a quiet cycle is explained instead of silent.
+  console.log(
+    `[cart] cycle done — ${carts.length} cart(s) fetched, ${sent} offer(s) sent | skipped:`,
+    JSON.stringify(skip),
+    ONLY_PHONE ? `| TEST MODE (only ${ONLY_PHONE})` : ''
+  );
 }
 
 // ─── Button handler — call this from server.js's WhatsApp webhook ────────────
