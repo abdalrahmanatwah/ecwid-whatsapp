@@ -118,6 +118,24 @@ export async function checkAbandonedCarts() {
   }
 
   const offers = loadOffers();
+
+  // Offers that FAILED (e.g. template name/language was wrong) are retried
+  // automatically once the template name or language changes. You can also
+  // force it by setting CART_RESET_FAILED=true (remove it afterwards, otherwise
+  // failed carts are retried on every cycle).
+  const sig = `${TEMPLATE}|${LANG}`;
+  if (process.env.CART_RESET_FAILED === 'true' || store.getMeta('cartTemplateSig') !== sig) {
+    let n = 0;
+    for (const [id, o] of Object.entries(offers)) {
+      if (o.status === 'failed') { delete offers[id]; n++; }
+    }
+    if (n) {
+      saveOffers(offers);
+      console.log(`[cart] reset ${n} failed offer(s) — they will be retried`);
+    }
+    store.setMeta('cartTemplateSig', sig);
+  }
+
   let sent = 0;
   const skip = { handled: 0, recovered: 0, noItems: 0, ageWindow: 0, noPhone: 0, testMode: 0, activeOrder: 0 };
   const handledBy = {};      // breakdown of the already-handled carts by their stored status
@@ -169,7 +187,7 @@ export async function checkAbandonedCarts() {
     if (ONLY_PHONE && phone !== ONLY_PHONE) { skip.testMode++; continue; }
 
     // Customer already has a live order → don't nag
-    if (hasActiveOrder(phone)) {
+    if (!ONLY_PHONE && hasActiveOrder(phone)) {
       skip.activeOrder++;
       if (DEBUG) console.log(`[cart][debug] ${cartId}: ${phone} already has an active order — skipped`);
       continue;
@@ -194,6 +212,9 @@ export async function checkAbandonedCarts() {
       offers[cartId] = { status: 'failed', phone, attempts, lastError: e.message.slice(0, 200) };
       saveOffers(offers);
       console.warn(`[cart] send failed for ${cartId} (attempt ${attempts}):`, e.message);
+      if (/132001|132000|132012|132015/.test(e.message)) {
+        console.warn(`[cart] hint: check the template name "${TEMPLATE}" AND its language code "${LANG}" (CART_TEMPLATE_LANG) exactly as shown in WhatsApp Manager, and that its status is Active.`);
+      }
     }
   }
 
