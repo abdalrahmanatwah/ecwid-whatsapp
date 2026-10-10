@@ -164,7 +164,8 @@ export async function checkAbandonedCarts() {
     }
 
     // Already recovered into a real order
-    if (cart.orderId || cart.order?.id) { skip.recovered++; continue; }
+    // Ecwid sets `recoveredOrderId` only when the cart was already turned into an order
+    if (cart.recoveredOrderId || cart.orderId || cart.order?.id) { skip.recovered++; continue; }
 
     const items = Array.isArray(cart.items) ? cart.items : [];
     if (!items.length) { skip.noItems++; continue; }
