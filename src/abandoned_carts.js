@@ -260,8 +260,9 @@ export async function handleCartButton(payload, from) {
   }
 
   // ── Confirm: place the abandoned cart as a real order ──
+  let cart = null; // kept outside the try so the failure alert can include the cart's details
   try {
-    const cart = await ecwid(`/carts/${encodeURIComponent(cartId)}`);
+    cart = await ecwid(`/carts/${encodeURIComponent(cartId)}`);
     const placed = await ecwid(`/carts/${encodeURIComponent(cartId)}/place`, { method: 'POST' });
     const orderId = String(placed.id ?? placed.orderId ?? '');
     if (!orderId) throw new Error(`place returned no order id: ${JSON.stringify(placed).slice(0, 150)}`);
@@ -304,7 +305,19 @@ export async function handleCartButton(payload, from) {
     saveOffers(offers);
     try { await sendText(phone, 'وصلنا طلبك ✅ هنتواصل معاك خلال دقائق لتأكيد التفاصيل والهدية 🎁'); }
     catch { /* ignore */ }
-    await notifyMerchant(`🛒⚠️ عميل (${phone}) ضغط تأكيد على سلة ${cartId} لكن إنشاء الأوردر فشل (${e.message.slice(0, 120)}) — كلمه يدوياً.`);
+    // Give the owner everything needed to create the order by hand.
+    let details = '';
+    try {
+      const sp = cart?.shippingPerson || {};
+      const { products } = extractOrderInfo({ items: cart?.items || [] });
+      details =
+        `\nالاسم: ${sp.name || '-'}` +
+        `\nالعنوان: ${[sp.stateOrProvinceName || sp.city, sp.street].filter(Boolean).join(' - ') || 'غير مسجل'}` +
+        `\nالمنتجات: ${products}` +
+        `\nالإجمالي: ${cart?.total ?? '-'}` +
+        `\n🎁 العميل أخذ عرض هدية الفرش الطبي المجاني.`;
+    } catch { /* details are best-effort */ }
+    await notifyMerchant(`🛒⚠️ عميل (${phone}) ضغط تأكيد على سلة ${cartId} لكن إنشاء الأوردر فشل (${e.message.slice(0, 120)}) — اعمل الأوردر يدوياً وكلمه.${details}`);
   }
   return true;
 }
