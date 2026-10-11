@@ -12,7 +12,7 @@ import { sendPollTemplate } from './whatsapp.js';
 import { normalizePhone } from './phone.js';
 import { store } from './store.js';
 import { trackFromEcwid } from './ecwid_tracking.js';
-import { checkAbandonedCarts } from './abandoned_carts.js';
+import { checkAbandonedCarts, hasRecentCartConfirm } from './abandoned_carts.js';
 import { autoShipOrder } from './auto_ship.js';
 import { notifyMerchant } from './notify.js';
 
@@ -36,6 +36,21 @@ async function attemptSend(orderId, prev = {}, isRetry = false) {
       console.warn(`[poll] order ${orderId} has no usable phone, skipping`);
       store.upsert(orderId, { status: 'no_phone', orderNumber });
       return false;
+    }
+
+    // Order created from an abandoned-cart offer the customer just confirmed:
+    // don't send the standard poll (it lists the items WITHOUT the free gift,
+    // and customers cancel). Register it for manual tracking instead.
+    if (hasRecentCartConfirm(to)) {
+      store.upsert(orderId, {
+        status: 'confirmed_noship',
+        to,
+        orderNumber,
+        confirmedAt: new Date().toISOString(),
+        fromCart: true,
+      });
+      console.log(`[poll] order ${orderId} comes from a cart confirmation — standard poll skipped`);
+      return true;
     }
 
     await sendPollTemplate(to, { products, total, orderId });
