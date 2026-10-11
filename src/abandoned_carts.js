@@ -97,6 +97,19 @@ function hasShippingAddress(cart) {
   return Boolean(s.street && (s.city || s.stateOrProvinceName));
 }
 
+// True if this phone confirmed a cart offer in the last few minutes. The poller
+// uses it to NOT send the standard Confirm/Cancel poll (which lists the items
+// without the free gift) for an order that was just created from a cart.
+export function hasRecentCartConfirm(phone, withinMs = 15 * 60_000) {
+  if (!phone) return false;
+  const now = Date.now();
+  return Object.values(loadOffers()).some((o) =>
+    o && o.phone === phone &&
+    (o.status === 'confirming' || o.status === 'confirmed') &&
+    o.respondedAt && now - new Date(o.respondedAt).getTime() < withinMs
+  );
+}
+
 // ─── Main: send the offer to every abandoned cart ────────────────────────────
 export async function checkAbandonedCarts() {
   if (!TEMPLATE) {                              // feature disabled
@@ -240,6 +253,7 @@ export async function handleCartButton(payload, from) {
   const phone = offer.phone || normalizePhone(from, COUNTRY) || from;
 
   // Double-tap protection
+  if (offer.status === 'confirming') return true; // already being processed
   if (offer.status === 'confirmed' || offer.status === 'cancelled') {
     try {
       await sendText(phone, offer.status === 'confirmed'
@@ -261,11 +275,23 @@ export async function handleCartButton(payload, from) {
 
   // ── Confirm: place the abandoned cart as a real order ──
   let cart = null; // kept outside the try so the failure alert can include the cart's details
+
+  // Mark it BEFORE the order exists, so the poller (which discovers new Ecwid
+  // orders) can never send this customer the standard poll for it.
+  offers[cartId] = { ...offer, status: 'confirming', respondedAt: new Date().toISOString() };
+  saveOffers(offers);
+
   try {
     cart = await ecwid(`/carts/${encodeURIComponent(cartId)}`);
     const placed = await ecwid(`/carts/${encodeURIComponent(cartId)}/place`, { method: 'POST' });
-    const orderId = String(placed.id ?? placed.orderId ?? '');
-    if (!orderId) throw new Error(`place returned no order id: ${JSON.stringify(placed).slice(0, 150)}`);
+    if (!String(placed.id ?? placed.orderId ?? '')) throw new Error(`place returned no order id: ${JSON.stringify(placed).slice(0, 150)}`);
+
+    // Make sure we key the store by the SAME id the poller sees in order searches.
+    let orderId = String(placed.id ?? placed.orderId ?? '');
+    try {
+      const o = await ecwid(`/orders/${encodeURIComponent(orderId)}`);
+      if (o?.id != null) orderId = String(o.id);
+    } catch { /* keep the id returned by place */ }
 
     const orderNumber = placed.orderNumber || placed.vendorOrderNumber || orderId;
     const addressOk = hasShippingAddress(cart);
