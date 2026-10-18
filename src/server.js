@@ -13,11 +13,12 @@ import * as qpOrders from './qp_orders.js';
 import { handleCartButton } from './abandoned_carts.js';
 import { socialProofRouter } from './social_proof.js';
 
-app.use('/social-proof', socialProofRouter);
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json({ limit: '10mb' }));
+
+// Social proof: customer photos under the product gallery (widget.js + photos.json public; /admin gated).
+app.use('/social-proof', socialProofRouter);
 
 const PORT = process.env.PORT || 3000;
 const CONFIRM_STATUS = process.env.CONFIRM_FULFILLMENT_STATUS || 'PROCESSING';
