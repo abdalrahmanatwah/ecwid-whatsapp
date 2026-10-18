@@ -7,8 +7,14 @@
   window.__k499SocialProof = true;
 
   var BASE = '__SOCIAL_PROOF_BASE__';
-  var TITLE = 'صور من عملائنا 📸';
-  var SUBTITLE = 'عملاء حقيقيين استلموا أوردراتهم من 499K';
+  // Copy — edit freely.
+  var EYEBROW = 'REAL CUSTOMERS';
+  var TITLE = 'شوفها على رجل عملائنا';
+  var SUBTITLE = 'صور حقيقية من عملاء 499K بعد ما استلموا أوردراتهم';
+  var CHIP = 'عميل 499K';
+  // Sporty display face for Arabic + Latin headings (Google Fonts).
+  var FONT_URL = 'https://fonts.googleapis.com/css2?family=Changa:wght@500;600;700;800&display=swap';
+  var FONT = "'Changa', inherit";
   var BOX_ID = 'k499-social-proof';
 
   // Where to put the strip, best match first. Ecwid's product page puts the
@@ -34,29 +40,53 @@
   /* ----------------------------- styles ----------------------------- */
   function injectStyles() {
     if (document.getElementById('k499-sp-css')) return;
+    if (!document.getElementById('k499-sp-font')) {
+      var lk = document.createElement('link');
+      lk.id = 'k499-sp-font'; lk.rel = 'stylesheet'; lk.href = FONT_URL;
+      document.head.appendChild(lk);
+    }
     var css =
       // Sized to match the product photos: a 2-column grid of big tiles on desktop
       // (like Ecwid's 2-up gallery), a full-width swipe carousel on phones.
       '#' + BOX_ID + '{direction:rtl;margin:44px 0 36px;font-family:inherit;clear:both;width:100%;max-width:100%;box-sizing:border-box}' +
-      '#' + BOX_ID + ' .k499-h{display:flex;align-items:baseline;gap:6px 12px;flex-wrap:wrap;margin:0 0 18px}' +
-      '#' + BOX_ID + ' .k499-t{font-size:24px;font-weight:800;line-height:1.3;margin:0;color:inherit}' +
-      '#' + BOX_ID + ' .k499-s{font-size:15px;opacity:.7}' +
+      // Heading: skewed black eyebrow tag, big condensed title with a speed stripe, quiet subtitle.
+      '#' + BOX_ID + ' .k499-h{margin:0 0 20px;padding:0 3px;font-family:' + FONT + '}' +
+      '#' + BOX_ID + ' .k499-e{display:inline-block;background:#111;color:#fff;font-size:12px;font-weight:700;' +
+        'letter-spacing:.2em;padding:5px 12px 4px;transform:skewX(-12deg);margin:0 5px 12px;direction:ltr}' +
+      '#' + BOX_ID + ' .k499-e span{display:inline-block;transform:skewX(12deg)}' +
+      '#' + BOX_ID + ' .k499-t{font-family:' + FONT + ';font-size:34px;font-weight:800;line-height:1.1;margin:0;color:inherit;' +
+        'letter-spacing:-.01em;display:flex;align-items:center;gap:12px}' +
+      '#' + BOX_ID + ' .k499-t:after{content:"";flex:1;height:4px;min-width:40px;' +
+        'background:repeating-linear-gradient(-60deg,currentColor 0 8px,transparent 8px 13px);opacity:.9}' +
+      '#' + BOX_ID + ' .k499-s{display:block;margin-top:8px;font-size:16px;font-weight:500;opacity:.62}' +
       '#' + BOX_ID + ' .k499-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}' +
       '#' + BOX_ID + ' .k499-card{position:relative;border:0;padding:0;margin:0;width:100%;border-radius:0;overflow:hidden;' +
         'cursor:zoom-in;background:#eee;aspect-ratio:var(--k499-ar,1/1);display:block}' +
       '#' + BOX_ID + ' .k499-card img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .35s}' +
       '#' + BOX_ID + ' .k499-card:hover img{transform:scale(1.03)}' +
-      '#' + BOX_ID + ' .k499-cap{position:absolute;inset:auto 0 0 0;padding:44px 16px 14px;color:#fff;' +
-        'font-size:15px;line-height:1.35;text-align:right;background:linear-gradient(transparent,rgba(0,0,0,.75))}' +
-      '#' + BOX_ID + ' .k499-cap b{display:block;font-size:19px;font-weight:700}' +
-      '#' + BOX_ID + ' .k499-more{display:block;margin:18px auto 0;padding:12px 28px;font:inherit;font-size:16px;font-weight:600;' +
-        'background:transparent;color:inherit;border:1.5px solid currentColor;border-radius:999px;cursor:pointer}' +
+      '#' + BOX_ID + ' .k499-cap{position:absolute;inset:auto 0 0 0;padding:72px 16px 16px;color:#fff;font-family:' + FONT + ';' +
+        'line-height:1.25;text-align:right;background:linear-gradient(transparent,rgba(0,0,0,.82))}' +
+      '#' + BOX_ID + ' .k499-cap b{display:block;font-size:22px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}' +
+      // Shoe model: white slanted label like a sneaker box tag.
+      '#' + BOX_ID + ' .k499-shoe{display:inline-block;max-width:100%;background:#fff;color:#111;transform:skewX(-12deg);' +
+        'padding:4px 10px 3px;margin:0 3px 10px;direction:ltr;box-shadow:3px 3px 0 rgba(0,0,0,.35)}' +
+      '#' + BOX_ID + ' .k499-shoe span{display:block;transform:skewX(12deg);font-size:14px;font-weight:800;' +
+        'text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
+      '#' + BOX_ID + ' .k499-city{display:flex;align-items:center;gap:5px;margin-top:4px;font-size:15px;font-weight:500;opacity:.9}' +
+      '#' + BOX_ID + ' .k499-city svg{width:13px;height:13px;flex:none}' +
+      '#' + BOX_ID + ' .k499-chip{position:absolute;top:12px;right:12px;background:rgba(255,255,255,.94);color:#111;font-family:' + FONT + ';' +
+        'font-size:12px;font-weight:700;padding:4px 10px;border-radius:2px;display:flex;align-items:center;gap:5px}' +
+      '#' + BOX_ID + ' .k499-chip i{width:6px;height:6px;border-radius:50%;background:#1fbf5b;display:block}' +
+      '#' + BOX_ID + ' .k499-more{display:block;margin:20px auto 0;padding:12px 32px;font-family:' + FONT + ';font-size:16px;font-weight:700;letter-spacing:.02em;' +
+        'background:#111;color:#fff;border:0;border-radius:0;transform:skewX(-10deg);cursor:pointer}' +
       '#' + BOX_ID + ' .k499-card.k499-extra{display:none}' +
       '#' + BOX_ID + '.k499-open .k499-card.k499-extra{display:block}' +
       '#' + BOX_ID + '.k499-open .k499-more{display:none}' +
       '@media(max-width:767px){' +
         '#' + BOX_ID + '{margin:32px 0 28px}' +
-        '#' + BOX_ID + ' .k499-t{font-size:21px}' +
+        '#' + BOX_ID + ' .k499-t{font-size:27px}' +
+        '#' + BOX_ID + ' .k499-s{font-size:14.5px}' +
+        '#' + BOX_ID + ' .k499-cap b{font-size:20px}' +
         '#' + BOX_ID + ' .k499-row{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;' +
           'scrollbar-width:none;gap:8px}' +
         '#' + BOX_ID + ' .k499-row::-webkit-scrollbar{display:none}' +
@@ -98,16 +128,19 @@
     if (ar) box.style.setProperty('--k499-ar', ar);
     var cards = photos.map(function (p, i) {
       var who = p.name ? '<b>' + esc(p.name) + '</b>' : '';
-      var where = p.city ? esc(p.city) : '';
-      var cap = who || where ? '<span class="k499-cap">' + who + where + '</span>' : '';
+      var pin = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
+      var where = p.city ? '<span class="k499-city">' + pin + esc(p.city) + '</span>' : '';
+      var shoe = p.shoe ? '<span class="k499-shoe"><span>' + esc(p.shoe) + '</span></span>' : '';
+      var cap = who || where || shoe ? '<span class="k499-cap">' + shoe + who + where + '</span>' : '';
       return (
         '<button type="button" class="k499-card' + (i >= DESKTOP_LIMIT ? ' k499-extra' : '') + '" data-i="' + i + '" aria-label="صورة عميل ' + esc(p.name) + '">' +
         '<img loading="lazy" src="' + BASE + p.src + '" alt="' + esc((p.name || 'عميل') + ' ' + (p.city || '')) + '">' +
-        cap + '</button>'
+        '<span class="k499-chip"><i></i>' + CHIP + '</span>' + cap + '</button>'
       );
     }).join('');
     box.innerHTML =
-      '<div class="k499-h"><h3 class="k499-t">' + TITLE + '</h3><span class="k499-s">' + SUBTITLE + '</span></div>' +
+      '<div class="k499-h"><div class="k499-e"><span>' + EYEBROW + '</span></div>' +
+        '<h3 class="k499-t">' + TITLE + '</h3><span class="k499-s">' + SUBTITLE + '</span></div>' +
       '<div class="k499-row">' + cards + '</div>' +
       (photos.length > 1 ? '<div class="k499-dots">' + photos.map(function (_p, i) { return '<i' + (i ? '' : ' class="on"') + '></i>'; }).join('') + '</div>' : '') +
       (photos.length > DESKTOP_LIMIT ? '<button type="button" class="k499-more">عرض المزيد (' + (photos.length - DESKTOP_LIMIT) + ')</button>' : '');
@@ -157,7 +190,7 @@
     function show() {
       var p = photos[i];
       img.src = BASE + p.src;
-      cap.textContent = [p.name, p.city].filter(Boolean).join(' – ');
+      cap.textContent = [p.shoe, p.name, p.city].filter(Boolean).join(' · ');
     }
     function go(d) { i = (i + d + photos.length) % photos.length; show(); }
     function close() { document.removeEventListener('keydown', onKey); lb.remove(); }
