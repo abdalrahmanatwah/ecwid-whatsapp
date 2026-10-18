@@ -30,6 +30,7 @@
   .empty { color:var(--mute); padding:20px 0; text-align:center; }
   .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:#1d2330; color:#fff; padding:9px 16px; border-radius:8px; display:none; }
   .tag { font-size:11px; color:var(--mute); }
+  [hidden] { display:none !important; }
 </style>
 </head>
 <body>
@@ -43,7 +44,7 @@
     <input type="file" id="file" accept="image/*" multiple hidden>
     <div class="grid" id="pending"></div>
     <div class="bar" id="pendingBar" hidden>
-      <span class="tag">اكتب الاسم الأول والمدينة لكل صورة (اختياري)</span>
+      <span class="tag">اكتب الاسم الأول والمدينة واسم الشوز لكل صورة (اختياري)</span>
       <button class="primary" id="uploadAll">رفع الصور</button>
     </div>
   </div>
@@ -53,6 +54,7 @@
     <div class="grid" id="list"></div>
   </div>
 </div>
+<datalist id="shoes"></datalist>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -101,7 +103,9 @@
     Array.prototype.forEach.call(files, function (f) {
       if (!/^image\//.test(f.type)) return;
       resize(f).then(function (data) {
-        pending.push({ data: data, name: '', city: '' });
+        var last = pending[pending.length - 1];
+        // Same customer often sends several photos: carry the last typed details over.
+        pending.push({ data: data, name: last ? last.name : '', city: last ? last.city : '', shoe: last ? last.shoe : '' });
         renderPending();
       }).catch(function (e) { toast(e.message); });
     });
@@ -110,8 +114,9 @@
     var el = document.getElementById('pending');
     el.innerHTML = pending.map(function (p, i) {
       return '<div class="item"><img src="' + p.data + '"><div class="f">' +
-        '<input type="text" placeholder="الاسم الأول" data-i="' + i + '" data-k="name" value="' + esc(p.name) + '">' +
-        '<input type="text" placeholder="المدينة / المنطقة" data-i="' + i + '" data-k="city" value="' + esc(p.city) + '">' +
+        '<input type="text" dir="auto" placeholder="الاسم الأول" data-i="' + i + '" data-k="name" value="' + esc(p.name) + '">' +
+        '<input type="text" dir="auto" placeholder="المدينة / المنطقة" data-i="' + i + '" data-k="city" value="' + esc(p.city) + '">' +
+        '<input type="text" dir="auto" list="shoes" placeholder="اسم الشوز (مثلاً Adidas Hyperboost Pro 2)" data-i="' + i + '" data-k="shoe" value="' + esc(p.shoe) + '">' +
         '<div class="acts"><button class="danger" data-rm="' + i + '">إلغاء</button></div></div></div>';
     }).join('');
     document.getElementById('pendingBar').hidden = !pending.length;
@@ -134,7 +139,7 @@
       }
       var p = queue.shift();
       btn.textContent = 'جاري الرفع… (' + (done + 1) + ')';
-      api('/photos', { method: 'POST', body: JSON.stringify({ image: p.data, name: p.name, city: p.city }) })
+      api('/photos', { method: 'POST', body: JSON.stringify({ image: p.data, name: p.name, city: p.city, shoe: p.shoe }) })
         .then(function () { done++; next(); })
         .catch(function (e) { toast('فشل الرفع: ' + e.message); btn.disabled = false; btn.textContent = 'رفع الصور'; pending = [p].concat(queue); renderPending(); load(); });
     }
@@ -156,12 +161,17 @@
     var el = document.getElementById('list');
     var visible = photos.filter(function (p) { return !p.hidden; }).length;
     document.getElementById('count').textContent = '(' + visible + ' ظاهرة من ' + photos.length + ')';
+    var seen = {};
+    document.getElementById('shoes').innerHTML = photos.map(function (p) { return p.shoe; })
+      .filter(function (s) { return s && !seen[s] && (seen[s] = 1); })
+      .map(function (s) { return '<option value="' + esc(s) + '">'; }).join('');
     if (!photos.length) { el.innerHTML = '<div class="empty">لسه مفيش صور. ارفع أول صورة من فوق.</div>'; return; }
     el.innerHTML = photos.map(function (p, i) {
       return '<div class="item' + (p.hidden ? ' hidden-photo' : '') + '" data-id="' + p.id + '">' +
         '<img loading="lazy" src="' + p.src.replace(/^\/social-proof\//, '') + '"><div class="f">' +
-        '<input type="text" placeholder="الاسم الأول" data-k="name" value="' + esc(p.name) + '">' +
-        '<input type="text" placeholder="المدينة / المنطقة" data-k="city" value="' + esc(p.city) + '">' +
+        '<input type="text" dir="auto" placeholder="الاسم الأول" data-k="name" value="' + esc(p.name) + '">' +
+        '<input type="text" dir="auto" placeholder="المدينة / المنطقة" data-k="city" value="' + esc(p.city) + '">' +
+        '<input type="text" dir="auto" list="shoes" placeholder="اسم الشوز" data-k="shoe" value="' + esc(p.shoe) + '">' +
         '<div class="acts">' +
           '<button data-act="up" ' + (i === 0 ? 'disabled' : '') + ' title="قدّم">→</button>' +
           '<button data-act="down" ' + (i === photos.length - 1 ? 'disabled' : '') + ' title="أخّر">←</button>' +
