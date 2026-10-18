@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>صور العملاء – 499K</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2330; --mute:#6b7280; --line:#e5e7eb; --accent:#0a7cff; --danger:#d93025; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif; }
+  .wrap { max-width:1100px; margin:0 auto; padding:20px 16px 60px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--mute); margin:0 0 20px; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:20px; }
+  .panel h2 { font-size:15px; margin:0 0 12px; }
+  .drop { border:2px dashed var(--line); border-radius:10px; padding:26px; text-align:center; color:var(--mute); cursor:pointer; }
+  .drop.over { border-color:var(--accent); background:#eef5ff; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:12px; margin-top:14px; }
+  .item { border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#fff; display:flex; flex-direction:column; }
+  .item.hidden-photo { opacity:.45; }
+  .item img { width:100%; aspect-ratio:3/4; object-fit:cover; display:block; background:#eee; }
+  .item .f { padding:8px; display:flex; flex-direction:column; gap:6px; }
+  input[type=text] { width:100%; padding:7px 8px; border:1px solid var(--line); border-radius:7px; font:inherit; }
+  .acts { display:flex; gap:4px; flex-wrap:wrap; }
+  button { font:inherit; border:1px solid var(--line); background:#fff; border-radius:7px; padding:5px 9px; cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); padding:8px 16px; }
+  button.danger { color:var(--danger); }
+  button:disabled { opacity:.5; cursor:default; }
+  .bar { display:flex; justify-content:space-between; align-items:center; margin-top:14px; gap:10px; flex-wrap:wrap; }
+  .empty { color:var(--mute); padding:20px 0; text-align:center; }
+  .toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:#1d2330; color:#fff; padding:9px 16px; border-radius:8px; display:none; }
+  .tag { font-size:11px; color:var(--mute); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📸 صور العملاء</h1>
+  <p class="sub">الصور اللي هنا بتظهر تحت صور المنتج في كل صفحات الأحذية في المتجر.</p>
+
+  <div class="panel">
+    <h2>إضافة صور جديدة</h2>
+    <div class="drop" id="drop">اسحب الصور هنا أو اضغط لاختيارها (ممكن أكتر من صورة مرة واحدة)</div>
+    <input type="file" id="file" accept="image/*" multiple hidden>
+    <div class="grid" id="pending"></div>
+    <div class="bar" id="pendingBar" hidden>
+      <span class="tag">اكتب الاسم الأول والمدينة لكل صورة (اختياري)</span>
+      <button class="primary" id="uploadAll">رفع الصور</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>الصور المنشورة <span class="tag" id="count"></span></h2>
+    <div class="grid" id="list"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  var KEY = new URLSearchParams(location.search).get('key') || '';
+  var API = 'admin/api';
+  var photos = [];
+  var pending = [];
+
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({ 'Content-Type': 'application/json' }, KEY ? { 'X-Admin-Key': KEY } : {}, opts.headers || {});
+    return fetch(API + path, opts).then(function (r) {
+      if (!r.ok) return r.json().catch(function () { return {}; }).then(function (b) { throw new Error(b.error || ('HTTP ' + r.status)); });
+      return r.json();
+    });
+  }
+  function toast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.style.display = 'block';
+    clearTimeout(toast._t); toast._t = setTimeout(function () { t.style.display = 'none'; }, 2200);
+  }
+  function esc(s) { return String(s || '').replace(/[&<>"']/g, function (c) { return { '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]; }); }
+
+  // Shrink phone photos (often 3–6 MB) to max 1200px JPEG before upload.
+  function resize(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        var max = 1200, w = img.naturalWidth, h = img.naturalHeight;
+        var s = Math.min(1, max / Math.max(w, h));
+        var c = document.createElement('canvas');
+        c.width = Math.round(w * s); c.height = Math.round(h * s);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        resolve(c.toDataURL('image/jpeg', 0.82));
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('صورة غير مدعومة')); };
+      img.src = url;
+    });
+  }
+
+  /* -------- pending uploads -------- */
+  function addFiles(files) {
+    Array.prototype.forEach.call(files, function (f) {
+      if (!/^image\//.test(f.type)) return;
+      resize(f).then(function (data) {
+        pending.push({ data: data, name: '', city: '' });
+        renderPending();
+      }).catch(function (e) { toast(e.message); });
+    });
+  }
+  function renderPending() {
+    var el = document.getElementById('pending');
+    el.innerHTML = pending.map(function (p, i) {
+      return '<div class="item"><img src="' + p.data + '"><div class="f">' +
+        '<input type="text" placeholder="الاسم الأول" data-i="' + i + '" data-k="name" value="' + esc(p.name) + '">' +
+        '<input type="text" placeholder="المدينة / المنطقة" data-i="' + i + '" data-k="city" value="' + esc(p.city) + '">' +
+        '<div class="acts"><button class="danger" data-rm="' + i + '">إلغاء</button></div></div></div>';
+    }).join('');
+    document.getElementById('pendingBar').hidden = !pending.length;
+  }
+  document.getElementById('pending').addEventListener('input', function (e) {
+    var i = e.target.getAttribute('data-i');
+    if (i !== null) pending[i][e.target.getAttribute('data-k')] = e.target.value;
+  });
+  document.getElementById('pending').addEventListener('click', function (e) {
+    var i = e.target.getAttribute('data-rm');
+    if (i !== null) { pending.splice(Number(i), 1); renderPending(); }
+  });
+  document.getElementById('uploadAll').addEventListener('click', function () {
+    var btn = this; btn.disabled = true;
+    var queue = pending.slice(), done = 0;
+    function next() {
+      if (!queue.length) {
+        pending = []; renderPending(); btn.disabled = false;
+        toast('تم رفع ' + done + ' صورة ✅'); load(); return;
+      }
+      var p = queue.shift();
+      btn.textContent = 'جاري الرفع… (' + (done + 1) + ')';
+      api('/photos', { method: 'POST', body: JSON.stringify({ image: p.data, name: p.name, city: p.city }) })
+        .then(function () { done++; next(); })
+        .catch(function (e) { toast('فشل الرفع: ' + e.message); btn.disabled = false; btn.textContent = 'رفع الصور'; pending = [p].concat(queue); renderPending(); load(); });
+    }
+    next();
+  });
+
+  var drop = document.getElementById('drop'), file = document.getElementById('file');
+  drop.addEventListener('click', function () { file.click(); });
+  file.addEventListener('change', function () { addFiles(file.files); file.value = ''; });
+  drop.addEventListener('dragover', function (e) { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', function () { drop.classList.remove('over'); });
+  drop.addEventListener('drop', function (e) { e.preventDefault(); drop.classList.remove('over'); addFiles(e.dataTransfer.files); });
+
+  /* -------- published photos -------- */
+  function load() {
+    api('/photos').then(function (d) { photos = d.photos; renderList(); }).catch(function (e) { toast(e.message); });
+  }
+  function renderList() {
+    var el = document.getElementById('list');
+    var visible = photos.filter(function (p) { return !p.hidden; }).length;
+    document.getElementById('count').textContent = '(' + visible + ' ظاهرة من ' + photos.length + ')';
+    if (!photos.length) { el.innerHTML = '<div class="empty">لسه مفيش صور. ارفع أول صورة من فوق.</div>'; return; }
+    el.innerHTML = photos.map(function (p, i) {
+      return '<div class="item' + (p.hidden ? ' hidden-photo' : '') + '" data-id="' + p.id + '">' +
+        '<img loading="lazy" src="' + p.src.replace(/^\/social-proof\//, '') + '"><div class="f">' +
+        '<input type="text" placeholder="الاسم الأول" data-k="name" value="' + esc(p.name) + '">' +
+        '<input type="text" placeholder="المدينة / المنطقة" data-k="city" value="' + esc(p.city) + '">' +
+        '<div class="acts">' +
+          '<button data-act="up" ' + (i === 0 ? 'disabled' : '') + ' title="قدّم">→</button>' +
+          '<button data-act="down" ' + (i === photos.length - 1 ? 'disabled' : '') + ' title="أخّر">←</button>' +
+          '<button data-act="hide">' + (p.hidden ? 'إظهار' : 'إخفاء') + '</button>' +
+          '<button class="danger" data-act="del">حذف</button>' +
+        '</div></div></div>';
+    }).join('');
+  }
+  var list = document.getElementById('list');
+  list.addEventListener('change', function (e) {
+    var item = e.target.closest('.item'), k = e.target.getAttribute('data-k');
+    if (!item || !k) return;
+    var body = {}; body[k] = e.target.value;
+    api('/photos/' + item.getAttribute('data-id'), { method: 'PATCH', body: JSON.stringify(body) })
+      .then(function () { toast('تم الحفظ'); }).catch(function (er) { toast(er.message); });
+  });
+  list.addEventListener('click', function (e) {
+    var act = e.target.getAttribute('data-act'); if (!act) return;
+    var id = e.target.closest('.item').getAttribute('data-id');
+    var i = photos.findIndex(function (p) { return p.id === id; });
+    if (act === 'del') {
+      if (!confirm('حذف الصورة نهائيًا؟')) return;
+      api('/photos/' + id, { method: 'DELETE' }).then(function () { toast('اتحذفت'); load(); }).catch(function (er) { toast(er.message); });
+    } else if (act === 'hide') {
+      api('/photos/' + id, { method: 'PATCH', body: JSON.stringify({ hidden: !photos[i].hidden }) }).then(load).catch(function (er) { toast(er.message); });
+    } else {
+      var j = act === 'up' ? i - 1 : i + 1;
+      var t = photos[i]; photos[i] = photos[j]; photos[j] = t;
+      renderList();
+      api('/order', { method: 'PUT', body: JSON.stringify({ ids: photos.map(function (p) { return p.id; }) }) }).catch(function (er) { toast(er.message); load(); });
+    }
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>
