@@ -9,9 +9,10 @@
   var BASE = '__SOCIAL_PROOF_BASE__';
   // Copy — edit freely.
   var EYEBROW = 'REAL CUSTOMERS';
-  var TITLE = 'شوفها على رجل عملائنا';
-  var SUBTITLE = 'صور حقيقية من عملاء 499K بعد ما استلموا أوردراتهم';
-  var CHIP = 'عميل 499K';
+  var TITLE = 'WORN BY THE 499K FAMILY';
+  var SUBTITLE = 'Real photos from real customers, after their order arrived.';
+  var CHIP_FALLBACK = '499K CUSTOMER'; // shown in the corner when a photo has no customer name
+  var MORE_LABEL = 'SHOW MORE';
   // Sporty display face for Arabic + Latin headings (Google Fonts).
   var FONT_URL = 'https://fonts.googleapis.com/css2?family=Changa:wght@500;600;700;800&display=swap';
   var FONT = "'Changa', inherit";
@@ -48,7 +49,7 @@
     var css =
       // Sized to match the product photos: a 2-column grid of big tiles on desktop
       // (like Ecwid's 2-up gallery), a full-width swipe carousel on phones.
-      '#' + BOX_ID + '{direction:rtl;margin:44px 0 36px;font-family:inherit;clear:both;width:100%;max-width:100%;box-sizing:border-box}' +
+      '#' + BOX_ID + '{direction:ltr;text-align:left;margin:44px 0 36px;font-family:inherit;clear:both;width:100%;max-width:100%;box-sizing:border-box}' +
       // Heading: skewed black eyebrow tag, big condensed title with a speed stripe, quiet subtitle.
       '#' + BOX_ID + ' .k499-h{margin:0 0 20px;padding:0 3px;font-family:' + FONT + '}' +
       '#' + BOX_ID + ' .k499-e{display:inline-block;background:#111;color:#fff;font-size:12px;font-weight:700;' +
@@ -65,18 +66,19 @@
       '#' + BOX_ID + ' .k499-card img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .35s}' +
       '#' + BOX_ID + ' .k499-card:hover img{transform:scale(1.03)}' +
       '#' + BOX_ID + ' .k499-cap{position:absolute;inset:auto 0 0 0;padding:72px 16px 16px;color:#fff;font-family:' + FONT + ';' +
-        'line-height:1.25;text-align:right;background:linear-gradient(transparent,rgba(0,0,0,.82))}' +
+        'line-height:1.25;text-align:left;color:#fff !important;background:linear-gradient(transparent,rgba(0,0,0,.82))}' +
       '#' + BOX_ID + ' .k499-cap b{display:block;font-size:22px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}' +
       // Shoe model: white slanted label like a sneaker box tag.
       '#' + BOX_ID + ' .k499-shoe{display:inline-block;max-width:100%;background:#fff;color:#111;transform:skewX(-12deg);' +
         'padding:4px 10px 3px;margin:0 3px 10px;direction:ltr;box-shadow:3px 3px 0 rgba(0,0,0,.35)}' +
       '#' + BOX_ID + ' .k499-shoe span{display:block;transform:skewX(12deg);font-size:14px;font-weight:800;' +
         'text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
-      '#' + BOX_ID + ' .k499-city{display:flex;align-items:center;gap:5px;margin-top:4px;font-size:15px;font-weight:500;opacity:.9}' +
+      '#' + BOX_ID + ' .k499-city{display:flex;align-items:center;gap:6px;margin:2px 3px 0;font-size:16px;font-weight:600;letter-spacing:.03em;text-transform:uppercase;color:#fff !important}' +
       '#' + BOX_ID + ' .k499-city svg{width:13px;height:13px;flex:none}' +
-      '#' + BOX_ID + ' .k499-chip{position:absolute;top:12px;right:12px;background:rgba(255,255,255,.94);color:#111;font-family:' + FONT + ';' +
-        'font-size:12px;font-weight:700;padding:4px 10px;border-radius:2px;display:flex;align-items:center;gap:5px}' +
-      '#' + BOX_ID + ' .k499-chip i{width:6px;height:6px;border-radius:50%;background:#1fbf5b;display:block}' +
+      '#' + BOX_ID + ' .k499-chip{position:absolute;top:12px;left:12px;background:rgba(255,255,255,.95);color:#111 !important;font-family:' + FONT + ';' +
+        'font-size:14px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:6px 12px 5px;border-radius:2px;' +
+        'display:flex;align-items:center;gap:7px;box-shadow:0 2px 8px rgba(0,0,0,.18);max-width:calc(100% - 24px)}' +
+      '#' + BOX_ID + ' .k499-chip i{flex:none;width:7px;height:7px;border-radius:50%;background:#1fbf5b;display:block}' +
       '#' + BOX_ID + ' .k499-more{display:block;margin:20px auto 0;padding:12px 32px;font-family:' + FONT + ';font-size:16px;font-weight:700;letter-spacing:.02em;' +
         'background:#111;color:#fff;border:0;border-radius:0;transform:skewX(-10deg);cursor:pointer}' +
       '#' + BOX_ID + ' .k499-card.k499-extra{display:none}' +
@@ -85,6 +87,7 @@
       '@media(max-width:767px){' +
         '#' + BOX_ID + '{margin:32px 0 28px}' +
         '#' + BOX_ID + ' .k499-t{font-size:27px}' +
+        '#' + BOX_ID + ' .k499-t:after{display:none}' +
         '#' + BOX_ID + ' .k499-s{font-size:14.5px}' +
         '#' + BOX_ID + ' .k499-cap b{font-size:20px}' +
         '#' + BOX_ID + ' .k499-row{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;' +
@@ -98,14 +101,14 @@
       '}' +
       '@media(min-width:768px){#' + BOX_ID + ' .k499-dots{display:none}}' +
       '.k499-lb{position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.92);display:flex;' +
-        'align-items:center;justify-content:center;flex-direction:column;direction:rtl}' +
+        'align-items:center;justify-content:center;flex-direction:column;direction:ltr}' +
       '.k499-lb img{max-width:94vw;max-height:78vh;border-radius:10px;object-fit:contain}' +
       '.k499-lb .k499-lc{color:#fff;margin-top:12px;font-size:15px;text-align:center}' +
       '.k499-lb button{position:absolute;background:rgba(255,255,255,.14);color:#fff;border:0;' +
         'width:44px;height:44px;border-radius:50%;font-size:22px;cursor:pointer;line-height:44px;padding:0}' +
-      '.k499-lb .k499-x{top:14px;left:14px}' +
-      '.k499-lb .k499-prev{right:10px;top:50%;transform:translateY(-50%)}' +
-      '.k499-lb .k499-next{left:10px;top:50%;transform:translateY(-50%)}';
+      '.k499-lb .k499-x{top:14px;right:14px}' +
+      '.k499-lb .k499-prev{left:10px;top:50%;transform:translateY(-50%)}' +
+      '.k499-lb .k499-next{right:10px;top:50%;transform:translateY(-50%)}';
     var st = document.createElement('style');
     st.id = 'k499-sp-css';
     st.textContent = css;
@@ -119,7 +122,7 @@
   }
 
   /* ------------------------------ render ----------------------------- */
-  var DESKTOP_LIMIT = 6; // show this many on desktop, rest behind "عرض المزيد"
+  var DESKTOP_LIMIT = 6; // show this many on desktop, rest behind "SHOW MORE"
 
   function build(photos, galleryEl) {
     var box = document.createElement('div');
@@ -127,15 +130,15 @@
     var ar = productAspect(galleryEl);
     if (ar) box.style.setProperty('--k499-ar', ar);
     var cards = photos.map(function (p, i) {
-      var who = p.name ? '<b>' + esc(p.name) + '</b>' : '';
       var pin = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>';
       var where = p.city ? '<span class="k499-city">' + pin + esc(p.city) + '</span>' : '';
       var shoe = p.shoe ? '<span class="k499-shoe"><span>' + esc(p.shoe) + '</span></span>' : '';
-      var cap = who || where || shoe ? '<span class="k499-cap">' + shoe + who + where + '</span>' : '';
+      // Customer name lives in the corner chip; the bottom carries the shoe tag + city.
+      var cap = where || shoe ? '<span class="k499-cap">' + shoe + where + '</span>' : '';
       return (
-        '<button type="button" class="k499-card' + (i >= DESKTOP_LIMIT ? ' k499-extra' : '') + '" data-i="' + i + '" aria-label="صورة عميل ' + esc(p.name) + '">' +
-        '<img loading="lazy" src="' + BASE + p.src + '" alt="' + esc((p.name || 'عميل') + ' ' + (p.city || '')) + '">' +
-        '<span class="k499-chip"><i></i>' + CHIP + '</span>' + cap + '</button>'
+        '<button type="button" class="k499-card' + (i >= DESKTOP_LIMIT ? ' k499-extra' : '') + '" data-i="' + i + '" aria-label="Customer photo ' + esc(p.name) + '">' +
+        '<img loading="lazy" src="' + BASE + p.src + '" alt="' + esc([p.name || '499K customer', p.shoe, p.city].filter(Boolean).join(' - ')) + '">' +
+        '<span class="k499-chip"><i></i>' + (p.name ? esc(p.name) : CHIP_FALLBACK) + '</span>' + cap + '</button>'
       );
     }).join('');
     box.innerHTML =
@@ -143,7 +146,7 @@
         '<h3 class="k499-t">' + TITLE + '</h3><span class="k499-s">' + SUBTITLE + '</span></div>' +
       '<div class="k499-row">' + cards + '</div>' +
       (photos.length > 1 ? '<div class="k499-dots">' + photos.map(function (_p, i) { return '<i' + (i ? '' : ' class="on"') + '></i>'; }).join('') + '</div>' : '') +
-      (photos.length > DESKTOP_LIMIT ? '<button type="button" class="k499-more">عرض المزيد (' + (photos.length - DESKTOP_LIMIT) + ')</button>' : '');
+      (photos.length > DESKTOP_LIMIT ? '<button type="button" class="k499-more">' + MORE_LABEL + ' (' + (photos.length - DESKTOP_LIMIT) + ')</button>' : '');
 
     // Phone carousel: light up the dot for the card in view.
     var row = box.querySelector('.k499-row');
@@ -182,8 +185,8 @@
     var lb = document.createElement('div');
     lb.className = 'k499-lb';
     lb.innerHTML =
-      '<button class="k499-x" aria-label="إغلاق">✕</button>' +
-      (photos.length > 1 ? '<button class="k499-prev" aria-label="السابق">›</button><button class="k499-next" aria-label="التالي">‹</button>' : '') +
+      '<button class="k499-x" aria-label="Close">✕</button>' +
+      (photos.length > 1 ? '<button class="k499-prev" aria-label="Previous">‹</button><button class="k499-next" aria-label="Next">›</button>' : '') +
       '<img alt=""><div class="k499-lc"></div>';
     var img = lb.querySelector('img');
     var cap = lb.querySelector('.k499-lc');
@@ -196,8 +199,8 @@
     function close() { document.removeEventListener('keydown', onKey); lb.remove(); }
     function onKey(e) {
       if (e.key === 'Escape') close();
-      if (e.key === 'ArrowLeft') go(1);
-      if (e.key === 'ArrowRight') go(-1);
+      if (e.key === 'ArrowRight') go(1);
+      if (e.key === 'ArrowLeft') go(-1);
     }
     lb.addEventListener('click', function (e) {
       if (e.target === lb || e.target.classList.contains('k499-x')) close();
@@ -209,7 +212,7 @@
     lb.addEventListener('touchend', function (e) {
       if (x0 === null) return;
       var dx = e.changedTouches[0].clientX - x0;
-      if (Math.abs(dx) > 40) go(dx > 0 ? 1 : -1); // RTL: swipe right = next
+      if (Math.abs(dx) > 40) go(dx < 0 ? 1 : -1); // swipe left = next
       x0 = null;
     });
     document.addEventListener('keydown', onKey);
