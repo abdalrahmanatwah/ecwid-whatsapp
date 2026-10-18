@@ -31,7 +31,7 @@
   function injectStyles() {
     if (document.getElementById('k499-sp-css')) return;
     var css =
-      '#' + BOX_ID + '{direction:rtl;margin:18px 0 6px;font-family:inherit;clear:both}' +
+      '#' + BOX_ID + '{direction:rtl;margin:18px 0 6px;font-family:inherit;clear:both;width:100%;max-width:100%;box-sizing:border-box}' +
       '#' + BOX_ID + ' .k499-h{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:0 0 10px}' +
       '#' + BOX_ID + ' .k499-t{font-size:17px;font-weight:700;margin:0;color:inherit}' +
       '#' + BOX_ID + ' .k499-s{font-size:12.5px;opacity:.65}' +
@@ -131,9 +131,12 @@
   }
 
   function findAnchor() {
+    // Put the strip INSIDE the gallery column (appended at its end), so it stays
+    // under the product photos. Inserting it as a sibling of the gallery lands it
+    // in the title/price column on Ecwid's two-column product layout.
     for (var a = 0; a < ANCHORS.length; a++) {
       var el = document.querySelector(ANCHORS[a]);
-      if (el) return { el: el, where: 'after' };
+      if (el) return { el: el, where: 'inside' };
     }
     for (var f = 0; f < FALLBACKS.length; f++) {
       var fb = document.querySelector(FALLBACKS[f]);
@@ -142,10 +145,14 @@
     return null;
   }
 
+  var onProduct = false;
+  var cachedPhotos = null;
+
   // The product page renders after OnPageLoaded fires in some themes, so retry briefly.
   function mount(tries) {
     getPhotos().then(function (photos) {
-      if (!photos.length) return;
+      if (!photos.length || !onProduct) return;
+      cachedPhotos = photos;
       var old = document.getElementById(BOX_ID);
       if (old) old.remove();
       var anchor = findAnchor();
@@ -155,14 +162,24 @@
       }
       injectStyles();
       var box = build(photos);
-      if (anchor.where === 'after') anchor.el.insertAdjacentElement('afterend', box);
+      if (anchor.where === 'inside') anchor.el.appendChild(box);
       else anchor.el.insertAdjacentElement('beforebegin', box);
     });
   }
 
+  // Ecwid re-renders the gallery (e.g. when a size/colour option changes) and can
+  // wipe the strip; put it back if it disappears while we're on a product page.
+  var watchTimer = null;
+  new MutationObserver(function () {
+    if (!onProduct || !cachedPhotos || document.getElementById(BOX_ID)) return;
+    clearTimeout(watchTimer);
+    watchTimer = setTimeout(function () { if (!document.getElementById(BOX_ID)) mount(0); }, 200);
+  }).observe(document.documentElement, { childList: true, subtree: true });
+
   function init() {
     Ecwid.OnPageLoaded.add(function (page) {
-      if (page.type === 'PRODUCT') mount(0);
+      onProduct = page.type === 'PRODUCT';
+      if (onProduct) mount(0);
       else {
         var old = document.getElementById(BOX_ID);
         if (old) old.remove();
