@@ -15,6 +15,10 @@
   // photos in .product-details__gallery; the others cover older/alternate layouts.
   var ANCHORS = ['.product-details__gallery', '.details-gallery', '.product-details-module__gallery'];
   var FALLBACKS = ['.product-details__description', '.product-details__product-description'];
+  // On phones the page is one column (photos → title/price/options/description),
+  // so the strip goes at the END of the details column, after the description.
+  var MOBILE_ANCHORS = ['.product-details__sidebar', '.product-details-module__sidebar', '.product-details__product-description', '.product-details__description', '.product-details'];
+  var mobileMQ = window.matchMedia('(max-width: 767px)');
 
   var photosPromise = null;
   function getPhotos() {
@@ -181,12 +185,18 @@
   }
 
   function findAnchor() {
+    if (mobileMQ.matches) {
+      for (var m = 0; m < MOBILE_ANCHORS.length; m++) {
+        var me = document.querySelector(MOBILE_ANCHORS[m]);
+        if (me) return { el: me, where: /description/.test(MOBILE_ANCHORS[m]) ? 'after' : 'inside', gallery: document.querySelector(ANCHORS.join(',')) };
+      }
+    }
     // Put the strip INSIDE the gallery column (appended at its end), so it stays
     // under the product photos. Inserting it as a sibling of the gallery lands it
     // in the title/price column on Ecwid's two-column product layout.
     for (var a = 0; a < ANCHORS.length; a++) {
       var el = document.querySelector(ANCHORS[a]);
-      if (el) return { el: el, where: 'inside' };
+      if (el) return { el: el, where: 'inside', gallery: el };
     }
     for (var f = 0; f < FALLBACKS.length; f++) {
       var fb = document.querySelector(FALLBACKS[f]);
@@ -211,11 +221,17 @@
         return;
       }
       injectStyles();
-      var box = build(photos, anchor.where === 'inside' ? anchor.el : null);
+      var box = build(photos, anchor.gallery || null);
       if (anchor.where === 'inside') anchor.el.appendChild(box);
+      else if (anchor.where === 'after') anchor.el.insertAdjacentElement('afterend', box);
       else anchor.el.insertAdjacentElement('beforebegin', box);
     });
   }
+
+  // Rotating a tablet / resizing across the phone breakpoint moves the strip.
+  var onMQ = function () { if (onProduct) mount(0); };
+  if (mobileMQ.addEventListener) mobileMQ.addEventListener('change', onMQ);
+  else if (mobileMQ.addListener) mobileMQ.addListener(onMQ);
 
   // Ecwid re-renders the gallery (e.g. when a size/colour option changes) and can
   // wipe the strip; put it back if it disappears while we're on a product page.
