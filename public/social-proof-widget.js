@@ -31,20 +31,38 @@
   function injectStyles() {
     if (document.getElementById('k499-sp-css')) return;
     var css =
-      '#' + BOX_ID + '{direction:rtl;margin:18px 0 6px;font-family:inherit;clear:both;width:100%;max-width:100%;box-sizing:border-box}' +
-      '#' + BOX_ID + ' .k499-h{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:0 0 10px}' +
-      '#' + BOX_ID + ' .k499-t{font-size:17px;font-weight:700;margin:0;color:inherit}' +
-      '#' + BOX_ID + ' .k499-s{font-size:12.5px;opacity:.65}' +
-      '#' + BOX_ID + ' .k499-row{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;' +
-        '-webkit-overflow-scrolling:touch;padding-bottom:6px;scrollbar-width:thin}' +
-      '#' + BOX_ID + ' .k499-card{flex:0 0 132px;scroll-snap-align:start;position:relative;border:0;padding:0;' +
-        'border-radius:12px;overflow:hidden;cursor:pointer;background:#eee;aspect-ratio:3/4;' +
-        'box-shadow:0 1px 4px rgba(0,0,0,.12)}' +
-      '#' + BOX_ID + ' .k499-card img{width:100%;height:100%;object-fit:cover;display:block}' +
-      '#' + BOX_ID + ' .k499-cap{position:absolute;inset:auto 0 0 0;padding:18px 8px 7px;color:#fff;' +
-        'font-size:12px;line-height:1.3;text-align:right;background:linear-gradient(transparent,rgba(0,0,0,.72))}' +
-      '#' + BOX_ID + ' .k499-cap b{display:block;font-size:13px}' +
-      '@media(min-width:768px){#' + BOX_ID + ' .k499-card{flex-basis:150px}}' +
+      // Sized to match the product photos: a 2-column grid of big tiles on desktop
+      // (like Ecwid's 2-up gallery), a full-width swipe carousel on phones.
+      '#' + BOX_ID + '{direction:rtl;margin:44px 0 36px;font-family:inherit;clear:both;width:100%;max-width:100%;box-sizing:border-box}' +
+      '#' + BOX_ID + ' .k499-h{display:flex;align-items:baseline;gap:6px 12px;flex-wrap:wrap;margin:0 0 18px}' +
+      '#' + BOX_ID + ' .k499-t{font-size:24px;font-weight:800;line-height:1.3;margin:0;color:inherit}' +
+      '#' + BOX_ID + ' .k499-s{font-size:15px;opacity:.7}' +
+      '#' + BOX_ID + ' .k499-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}' +
+      '#' + BOX_ID + ' .k499-card{position:relative;border:0;padding:0;margin:0;width:100%;border-radius:0;overflow:hidden;' +
+        'cursor:zoom-in;background:#eee;aspect-ratio:var(--k499-ar,1/1);display:block}' +
+      '#' + BOX_ID + ' .k499-card img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .35s}' +
+      '#' + BOX_ID + ' .k499-card:hover img{transform:scale(1.03)}' +
+      '#' + BOX_ID + ' .k499-cap{position:absolute;inset:auto 0 0 0;padding:44px 16px 14px;color:#fff;' +
+        'font-size:15px;line-height:1.35;text-align:right;background:linear-gradient(transparent,rgba(0,0,0,.75))}' +
+      '#' + BOX_ID + ' .k499-cap b{display:block;font-size:19px;font-weight:700}' +
+      '#' + BOX_ID + ' .k499-more{display:block;margin:18px auto 0;padding:12px 28px;font:inherit;font-size:16px;font-weight:600;' +
+        'background:transparent;color:inherit;border:1.5px solid currentColor;border-radius:999px;cursor:pointer}' +
+      '#' + BOX_ID + ' .k499-card.k499-extra{display:none}' +
+      '#' + BOX_ID + '.k499-open .k499-card.k499-extra{display:block}' +
+      '#' + BOX_ID + '.k499-open .k499-more{display:none}' +
+      '@media(max-width:767px){' +
+        '#' + BOX_ID + '{margin:32px 0 28px}' +
+        '#' + BOX_ID + ' .k499-t{font-size:21px}' +
+        '#' + BOX_ID + ' .k499-row{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;' +
+          'scrollbar-width:none;gap:8px}' +
+        '#' + BOX_ID + ' .k499-row::-webkit-scrollbar{display:none}' +
+        '#' + BOX_ID + ' .k499-card,#' + BOX_ID + ' .k499-card.k499-extra{display:block;flex:0 0 86%;scroll-snap-align:center}' +
+        '#' + BOX_ID + ' .k499-more{display:none}' +
+        '#' + BOX_ID + ' .k499-dots{display:flex;justify-content:center;gap:6px;margin-top:12px}' +
+        '#' + BOX_ID + ' .k499-dots i{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.25;transition:opacity .2s}' +
+        '#' + BOX_ID + ' .k499-dots i.on{opacity:.85}' +
+      '}' +
+      '@media(min-width:768px){#' + BOX_ID + ' .k499-dots{display:none}}' +
       '.k499-lb{position:fixed;inset:0;z-index:2147483000;background:rgba(0,0,0,.92);display:flex;' +
         'align-items:center;justify-content:center;flex-direction:column;direction:rtl}' +
       '.k499-lb img{max-width:94vw;max-height:78vh;border-radius:10px;object-fit:contain}' +
@@ -67,27 +85,59 @@
   }
 
   /* ------------------------------ render ----------------------------- */
-  function build(photos) {
+  var DESKTOP_LIMIT = 6; // show this many on desktop, rest behind "عرض المزيد"
+
+  function build(photos, galleryEl) {
     var box = document.createElement('div');
     box.id = BOX_ID;
+    var ar = productAspect(galleryEl);
+    if (ar) box.style.setProperty('--k499-ar', ar);
     var cards = photos.map(function (p, i) {
       var who = p.name ? '<b>' + esc(p.name) + '</b>' : '';
       var where = p.city ? esc(p.city) : '';
       var cap = who || where ? '<span class="k499-cap">' + who + where + '</span>' : '';
       return (
-        '<button type="button" class="k499-card" data-i="' + i + '" aria-label="صورة عميل ' + esc(p.name) + '">' +
+        '<button type="button" class="k499-card' + (i >= DESKTOP_LIMIT ? ' k499-extra' : '') + '" data-i="' + i + '" aria-label="صورة عميل ' + esc(p.name) + '">' +
         '<img loading="lazy" src="' + BASE + p.src + '" alt="' + esc((p.name || 'عميل') + ' ' + (p.city || '')) + '">' +
         cap + '</button>'
       );
     }).join('');
     box.innerHTML =
       '<div class="k499-h"><h3 class="k499-t">' + TITLE + '</h3><span class="k499-s">' + SUBTITLE + '</span></div>' +
-      '<div class="k499-row">' + cards + '</div>';
+      '<div class="k499-row">' + cards + '</div>' +
+      (photos.length > 1 ? '<div class="k499-dots">' + photos.map(function (_p, i) { return '<i' + (i ? '' : ' class="on"') + '></i>'; }).join('') + '</div>' : '') +
+      (photos.length > DESKTOP_LIMIT ? '<button type="button" class="k499-more">عرض المزيد (' + (photos.length - DESKTOP_LIMIT) + ')</button>' : '');
+
+    // Phone carousel: light up the dot for the card in view.
+    var row = box.querySelector('.k499-row');
+    var dots = box.querySelectorAll('.k499-dots i');
+    row.addEventListener('scroll', function () {
+      var cards = row.children, mid = row.getBoundingClientRect().left + row.clientWidth / 2, best = 0, bestD = Infinity;
+      for (var i = 0; i < cards.length; i++) {
+        var r = cards[i].getBoundingClientRect(), d = Math.abs(r.left + r.width / 2 - mid);
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      for (var j = 0; j < dots.length; j++) dots[j].className = j === best ? 'on' : '';
+    }, { passive: true });
+
     box.addEventListener('click', function (e) {
+      if (e.target.closest('.k499-more')) { box.classList.add('k499-open'); return; }
       var card = e.target.closest('.k499-card');
       if (card) openLightbox(photos, Number(card.getAttribute('data-i')));
     });
     return box;
+  }
+
+  // Same shape as the store's own product photos (width / height of the first one).
+  function productAspect(galleryEl) {
+    var img = galleryEl && galleryEl.querySelector('img');
+    if (!img) return '';
+    var r = img.getBoundingClientRect();
+    var w = r.width || img.naturalWidth, h = r.height || img.naturalHeight;
+    if (!w || !h) return '';
+    var ratio = w / h;
+    if (ratio < 0.6 || ratio > 1.6) return ''; // ignore odd thumbnails; keep square
+    return (Math.round(ratio * 1000) / 1000) + ' / 1';
   }
 
   function openLightbox(photos, start) {
@@ -161,7 +211,7 @@
         return;
       }
       injectStyles();
-      var box = build(photos);
+      var box = build(photos, anchor.where === 'inside' ? anchor.el : null);
       if (anchor.where === 'inside') anchor.el.appendChild(box);
       else anchor.el.insertAdjacentElement('beforebegin', box);
     });
