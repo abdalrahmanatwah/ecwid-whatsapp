@@ -59,7 +59,7 @@ function clean(s, max) {
 }
 
 function publicPhoto(p) {
-  return { id: p.id, src: `/social-proof/img/${p.file}`, name: p.name, city: p.city };
+  return { id: p.id, src: `/social-proof/img/${p.file}`, name: p.name, city: p.city, shoe: p.shoe || '' };
 }
 
 /* ------------------------------ auth ------------------------------- */
@@ -153,12 +153,13 @@ socialProofRouter.post('/admin/api/photos', requireAdmin, express.json({ limit: 
     file,
     name: clean(req.body.name, 40),
     city: clean(req.body.city, 40),
+    shoe: clean(req.body.shoe, 60),
     hidden: false,
     createdAt: new Date().toISOString(),
   };
   data.photos.unshift(photo); // newest first
   save(data);
-  console.log(`[social-proof] added photo ${id} (${photo.name} – ${photo.city})`);
+  console.log(`[social-proof] added photo ${id} (${photo.name} – ${photo.city} – ${photo.shoe})`);
   res.json({ photo: { ...publicPhoto(photo), hidden: false } });
 });
 
@@ -168,6 +169,7 @@ socialProofRouter.patch('/admin/api/photos/:id', requireAdmin, express.json(), (
   if (!p) return res.sendStatus(404);
   if ('name' in req.body) p.name = clean(req.body.name, 40);
   if ('city' in req.body) p.city = clean(req.body.city, 40);
+  if ('shoe' in req.body) p.shoe = clean(req.body.shoe, 60);
   if ('hidden' in req.body) p.hidden = !!req.body.hidden;
   save(data);
   res.json({ ok: true });
