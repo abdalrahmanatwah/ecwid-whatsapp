@@ -62,3 +62,8 @@ services:
         value: "2026-10-22"
       - key: SHEET_SYNC_INTERVAL_MINUTES
         value: "60"
+      # Monthly ad spend from Meta Ads Manager → the month tab's ad-spend cell.
+      - key: META_AD_ACCOUNT_ID
+        value: "942487855007284"
+      - key: META_ADS_TOKEN
+        sync: false
