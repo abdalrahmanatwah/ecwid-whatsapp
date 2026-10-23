@@ -5,8 +5,7 @@
 // known candidates in order and remembers the first one that answers with a
 // list of deliveries:
 //   1. POST /api/v2/deliveries/search   (what Bosta's own dashboard uses)
-//   2. GET  /api/v1/deliveries          (same family as the working single read)
-//   3. GET  /api/v0/deliveries          (what Bosta's official SDKs call)
+//   2. GET  /api/v0/deliveries          (what Bosta's official SDKs call)
 // If none works, the caller falls back to the deliveries it already tracks
 // through Ecwid tracking numbers. GET /dashboard/api/bosta-probe shows which
 // strategy works on this account and which fields Bosta returns.
@@ -19,15 +18,31 @@ const MAX_PAGES = Number(process.env.BOSTA_LIST_MAX_PAGES || 30);
 
 const headers = () => ({ Authorization: API_KEY, 'Content-Type': 'application/json' });
 
+// Bosta's v2 search ignores unknown body fields, so the right paging field
+// isn't knowable up front. Page 1 is plain; for page 2 each variant below is
+// tried until one returns shipments we haven't seen, and that one is kept.
+// For each field the 0-based form is tried first: on a 1-based API it just
+// repeats page 1 (no new shipments → rejected), while trying the 1-based form
+// first on a 0-based API would silently skip a page.
+const V2_PAGING = [
+  (p) => ({ pageNumber: p - 1 }),
+  (p) => ({ pageNumber: p }),
+  (p) => ({ pageId: p - 1 }),
+  (p) => ({ pageId: p }),
+  (p) => ({ page: p - 1 }),
+  (p) => ({ page: p }),
+];
+let v2Paging = null; // index into V2_PAGING that worked last time
+
+const v2 = (body, size) =>
+  fetch(`${ORIGIN}/api/v2/deliveries/search`, {
+    method: 'POST',
+    headers: headers(),
+    body: JSON.stringify({ pageLimit: size, limit: size, sortBy: '-createdAt', ...body }),
+  });
+
 const STRATEGIES = {
-  v2_search: (page, size) =>
-    fetch(`${ORIGIN}/api/v2/deliveries/search`, {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({ pageNumber: page, pageLimit: size, sortBy: '-createdAt' }),
-    }),
-  v1_list: (page, size) =>
-    fetch(`${ORIGIN}/api/v1/deliveries?pageNumber=${page}&pageLimit=${size}&sortBy=-createdAt`, { headers: headers() }),
+  v2_search: (page, size, variant) => v2(page === 1 ? {} : V2_PAGING[variant](page), size),
   v0_list: (page, size) =>
     fetch(`${ORIGIN}/api/v0/deliveries?pageNumber=${page}&limit=${size}`, { headers: headers() }),
 };
@@ -46,8 +61,8 @@ export function extractDeliveries(json) {
   return null;
 }
 
-async function fetchPage(name, page, size) {
-  const res = await STRATEGIES[name](page, size);
+async function fetchPage(name, page, size, variant = 0) {
+  const res = await STRATEGIES[name](page, size, variant);
   const text = await res.text();
   if (!res.ok) throw new Error(`${name} ${res.status} ${text.slice(0, 120)}`);
   let json;
@@ -59,8 +74,21 @@ async function fetchPage(name, page, size) {
 
 const ageDays = (d) => (Date.now() - new Date(d?.createdAt || d?.updatedAt || Date.now()).getTime()) / 86_400_000;
 
-// Returns { strategy, deliveries } covering roughly the last `sinceDays` days.
-// Throws if no strategy works.
+// Page 2 with each paging variant until one brings new shipments.
+async function findV2Paging(seen, size) {
+  const order = v2Paging != null ? [v2Paging, ...V2_PAGING.keys()].filter((v, i, a) => a.indexOf(v) === i) : [...V2_PAGING.keys()];
+  for (const variant of order) {
+    try {
+      const list = await fetchPage('v2_search', 2, size, variant);
+      if (list.some((d) => !seen.has(d.trackingNumber))) return { variant, list };
+    } catch { /* try the next variant */ }
+  }
+  return null;
+}
+
+// Returns { strategy, deliveries, complete } covering roughly the last
+// `sinceDays` days. `complete` is false when paging didn't work and only the
+// newest page could be read. Throws if no strategy works at all.
 export async function listRecentDeliveries({ sinceDays = 45 } = {}) {
   if (!API_KEY) throw new Error('BOSTA_API_KEY missing');
   const order = working ? [working, ...Object.keys(STRATEGIES).filter((s) => s !== working)] : Object.keys(STRATEGIES);
@@ -70,21 +98,47 @@ export async function listRecentDeliveries({ sinceDays = 45 } = {}) {
     try {
       const all = [];
       const seen = new Set();
-      for (let page = 1; page <= MAX_PAGES; page++) {
-        const list = await fetchPage(name, page, PAGE_SIZE);
+      const take = (list) => {
         let fresh = 0;
         for (const d of list) {
-          if (seen.has(d.trackingNumber)) continue;
+          if (!d?.trackingNumber || seen.has(d.trackingNumber)) continue;
           seen.add(d.trackingNumber);
           all.push(d);
           fresh++;
         }
-        // Stop at the end of the data, when a page repeats (paging ignored),
-        // or once a whole page is older than the window (newest-first order).
-        if (list.length < PAGE_SIZE || fresh === 0 || list.every((d) => ageDays(d) > sinceDays)) break;
+        return fresh;
+      };
+      const pastWindow = (list) => list.length > 0 && list.every((d) => ageDays(d) > sinceDays);
+
+      const first = await fetchPage(name, 1, PAGE_SIZE);
+      take(first);
+      let complete = first.length < PAGE_SIZE || pastWindow(first);
+      let variant = 0;
+
+      if (!complete && name === 'v2_search') {
+        const found = await findV2Paging(seen, PAGE_SIZE);
+        if (found) {
+          v2Paging = variant = found.variant;
+          take(found.list);
+          complete = found.list.length < PAGE_SIZE || pastWindow(found.list);
+          for (let page = 3; !complete && page <= MAX_PAGES; page++) {
+            const list = await fetchPage(name, page, PAGE_SIZE, variant);
+            const fresh = take(list);
+            if (list.length < PAGE_SIZE || pastWindow(list)) complete = true;
+            else if (fresh === 0) break; // paging stopped advancing
+          }
+        }
+      } else if (!complete) {
+        for (let page = 2; !complete && page <= MAX_PAGES; page++) {
+          const list = await fetchPage(name, page, PAGE_SIZE);
+          const fresh = take(list);
+          if (list.length < PAGE_SIZE || pastWindow(list)) complete = true;
+          else if (fresh === 0) break;
+        }
       }
+
       working = name;
-      return { strategy: name, deliveries: all.filter((d) => ageDays(d) <= sinceDays) };
+      return { strategy: name, paging: name === 'v2_search' ? v2Paging : null, complete, deliveries: all.filter((d) => ageDays(d) <= sinceDays) };
     } catch (e) {
       errors.push(e.message);
     }
@@ -104,6 +158,16 @@ function shape(obj, depth = 0) {
 
 export async function probeListing() {
   const out = {};
+  try {
+    const r = await listRecentDeliveries({ sinceDays: 45 });
+    const dates = r.deliveries.map((d) => d.createdAt).filter(Boolean).map((x) => new Date(x).toISOString().slice(0, 10)).sort();
+    out.fullListing = {
+      strategy: r.strategy, pagingVariant: r.paging, complete: r.complete, count: r.deliveries.length,
+      oldestCreated: dates[0] || null, newestCreated: dates.at(-1) || null,
+    };
+  } catch (e) {
+    out.fullListing = { error: e.message };
+  }
   for (const name of Object.keys(STRATEGIES)) {
     try {
       const list = await fetchPage(name, 1, 3);

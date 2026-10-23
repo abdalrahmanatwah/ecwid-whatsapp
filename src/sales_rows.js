@@ -122,7 +122,11 @@ function bostaTypeName(t) {
   if (t == null) return '';
   if (typeof t === 'object') return bostaTypeName(t.value ?? t.code ?? t.name);
   if (typeof t === 'number' || /^\d+$/.test(String(t))) return BOSTA_TYPE_CODES[Number(t)] || String(t);
-  return String(t).toUpperCase().replace(/[\s-]+/g, '_').replace(/^DELIVER$|^FORWARD$/, 'SEND');
+  return String(t)
+    .toUpperCase()
+    .replace(/[\s-]+/g, '_')
+    .replace(/^DELIVER$|^FORWARD$/, 'SEND')
+    .replace(/^RETURN_TO_ORIGIN$|^RETURNED_TO_ORIGIN$/, 'RTO');
 }
 
 export function normalizeBosta(d) {
@@ -130,8 +134,15 @@ export function normalizeBosta(d) {
   const stateValue = String(state.value || state.state || d.maskedState || d.deliveryState || '');
   const type = bostaTypeName(d.type);
   const oldType = bostaTypeName(d.oldType ?? d.type?.before ?? d.previousType);
+  // Bosta: state.deliveryTime is when it was delivered; state.delivering.time
+  // is when it went out for delivery (fallback only). The timeline's
+  // "Delivered" step is the last resort.
+  const timelineDelivered = Array.isArray(d.timeline)
+    ? d.timeline.find((t) => /delivered/i.test(t?.value || '') && t?.done)?.date
+    : null;
   const deliveredAt =
-    d.deliveredAt || state.deliveredAt || state.delivering?.time || state.delivered?.time ||
+    d.deliveredAt || (typeof state.deliveryTime === 'string' ? state.deliveryTime : null) || timelineDelivered ||
+    state.deliveredAt || state.delivered?.time || state.delivering?.time ||
     d.collectedFromConsignee || (/delivered/i.test(stateValue) ? d.updatedAt : null);
   const description =
     d.specs?.packageDetails?.description || d.packageDetails?.description || d.description || '';

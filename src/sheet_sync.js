@@ -94,8 +94,15 @@ async function gatherOrders(state) {
     try {
       const r = await listRecentDeliveries({ sinceDays: BOSTA_LOOKBACK_DAYS });
       raws = r.deliveries;
-      bostaSource = r.strategy;
-      bostaComplete = true;
+      bostaSource = r.strategy + (r.paging != null ? `#${r.paging}` : '');
+      bostaComplete = r.complete;
+      if (!r.complete) {
+        // Only the newest page was readable: add the Ecwid-tracked deliveries
+        // too, so older shipments delivered today aren't missed.
+        const seen = new Set(raws.map((d) => d.trackingNumber));
+        for (const d of await bostaFromEcwid(state.processed)) if (!seen.has(d.trackingNumber)) raws.push(d);
+        bostaSource += '+ecwid-tracked';
+      }
     } catch (e) {
       console.warn('[sheet] Bosta listing unavailable, using Ecwid-tracked deliveries only:', e.message);
       raws = await bostaFromEcwid(state.processed);
