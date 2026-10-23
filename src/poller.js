@@ -15,6 +15,7 @@ import { trackFromEcwid } from './ecwid_tracking.js';
 import { checkAbandonedCarts, hasRecentCartConfirm } from './abandoned_carts.js';
 import { autoShipOrder } from './auto_ship.js';
 import { notifyMerchant } from './notify.js';
+import { maybeRunSheetSync } from './sheet_sync.js';
 
 const COUNTRY = process.env.DEFAULT_COUNTRY_CODE || '20';
 const OVERLAP_SEC = 120;            // re-scan a little into the past when discovering new orders
@@ -167,6 +168,13 @@ async function pollOnce() {
     await checkAbandonedCarts();
   } catch (err) {
     console.error('[poll] abandoned carts step failed:', err.message);
+  }
+
+  // 6) Sales sheet: delivered Bosta/QP orders → Google Sheet (self-throttled, hourly).
+  try {
+    await maybeRunSheetSync();
+  } catch (err) {
+    console.error('[poll] sheet sync step failed:', err.message);
   }
 }
 
