@@ -24,6 +24,7 @@ import { getDeliveryState, bostaConfigured } from './bosta.js';
 import { allQpOrders } from './qp_orders.js';
 import { store } from './store.js';
 import { notifyMerchant } from './notify.js';
+import { metaAdsConfigured, monthSpend } from './meta_ads.js';
 import {
   normalizeBosta, normalizeQp, classify, saleRowValues, reviewRowValues, monthKey,
 } from './sales_rows.js';
@@ -277,6 +278,45 @@ async function writeReturns(counts, bostaComplete, qpFresh) {
   }
 }
 
+
+// ---- ad spend (Meta Ads Manager) ------------------------------------------------------
+
+const AD_TAX_CELL = `${q(ASSUMPTIONS)}!$B$16`;
+
+function cairoToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+}
+
+// Writes each month's Meta spend into its tab's ad-spend cell: the current
+// month, plus last month during the first 3 days (late-arriving charges).
+async function syncAdSpend(tabs, dryRun) {
+  if (!metaAdsConfigured()) return { skipped: 'META_ADS_TOKEN / META_AD_ACCOUNT_ID not set' };
+  const today = cairoToday();
+  const keys = [monthKey(today)];
+  if (Number(today.slice(8, 10)) <= 3) {
+    const [y, m] = today.split('-').map(Number);
+    keys.push(m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`);
+  }
+  const out = {};
+  for (const key of keys) {
+    const tab = findMonthTab(tabs, key);
+    if (!tab) { out[key] = { skipped: 'no tab for this month yet' }; continue; }
+    const { spend, currency } = await monthSpend(key);
+    out[key] = { spend, currency };
+    if (currency && currency !== 'EGP') { out[key].skipped = `ad account currency is ${currency}, not EGP`; continue; }
+    if (dryRun) continue;
+    const layout = await readLayout(tab.title);
+    if (!layout.ads) { out[key].skipped = 'no ad-spend row in this tab'; continue; }
+    const formula = `=${spend}*(1+${AD_TAX_CELL})`;
+    const [[current = ''] = []] = await sheets.getFormulas(SHEET_ID, `${q(tab.title)}!F${layout.ads}`);
+    if (String(current) === formula) continue;
+    const upTo = key === monthKey(today) ? `لحد ${today.slice(8, 10)}/${today.slice(5, 7)}` : 'الشهر كامل';
+    await sheets.updateValues(SHEET_ID, `${q(tab.title)}!C${layout.ads}:F${layout.ads}`, [[`مصاريف الإعلانات (من Ads Manager، ${upTo})`, null, null, formula]]);
+    out[key].written = true;
+  }
+  return out;
+}
+
 // ---- main ---------------------------------------------------------------------------
 
 let running = false;
@@ -356,6 +396,15 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
       await writeReturns(returnCounts, bostaComplete, qpFresh);
     }
 
+    // Ad spend from Meta Ads Manager (never blocks the rest of the sync).
+    let adSpend;
+    try {
+      adSpend = await syncAdSpend(await sheets.getTabs(SHEET_ID), dryRun);
+    } catch (e) {
+      adSpend = { error: e.message };
+      console.warn('[sheet] ad spend sync failed:', e.message);
+    }
+
     const result = {
       at: new Date().toISOString(),
       dryRun,
@@ -369,6 +418,7 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
       salesAdded: added.map((s) => ({ id: s.id, date: s.date, name: s.name, amount: s.amount })),
       reviewAdded: newReviews.map((r) => ({ id: r.id, date: r.date, reason: r.reason, amount: r.amount })),
       returnCounts,
+      adSpend,
     };
     state.lastRunAt = result.at;
     state.lastResult = result;

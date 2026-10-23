@@ -209,6 +209,12 @@ return count, since that list is incomplete). Open
 `/dashboard/sheet-sync/bosta-probe` once after deploying to see which endpoint
 works on your account.
 
+**Ad spend.** With `META_ADS_TOKEN` (System User token with `ads_read`) and
+`META_AD_ACCOUNT_ID` set, each run also writes the month's Meta spend into the
+month tab's ad-spend cell as `=<spend>*(1+'الافتراضات'!B16)` — B16 is the
+tax/fees % Meta adds on the invoice (0 if spend already matches what you pay).
+Last month is refreshed during the first 3 days of a new month.
+
 **Setup (one time):**
 1. Google Cloud → new project → enable **Google Sheets API** → create a
    **service account** → Keys → Add key → JSON (downloads a file).
@@ -232,6 +238,9 @@ works on your account.
 | `SHEET_SYNC_DRY_RUN` | `false` | Log only, never write |
 | `SHEET_SYNC` | `true` | `false` turns it off |
 | `SHEET_SYNC_BOSTA_DAYS` | `45` | How far back to list Bosta deliveries |
+| `SHEET_SYNC_QP_FRESH_HOURS` | `3` | QP return counts are written only if QP synced within this |
+| `META_ADS_TOKEN` | — | Meta System User token with `ads_read` |
+| `META_AD_ACCOUNT_ID` | `942487855007284` | Ad account number (no `act_`) |
 
 ## Configuration reference
 
