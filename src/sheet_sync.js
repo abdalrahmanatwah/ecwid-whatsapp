@@ -253,8 +253,11 @@ async function ensureReturnsTab(tabs) {
   await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!A1:E1`, [['الشهر', 'مرتجع بوسطة', 'مرتجع QP', 'الإجمالي', 'آخر تحديث']]);
 }
 
+// Counts only ever go up: a refused shipment stays refused, while a month's
+// early days eventually fall out of the carrier lookback window (Bosta: 45
+// days, QP: 35), which would otherwise shrink an older month's count.
 async function writeReturns(counts, bostaComplete, qpFresh) {
-  const rows = await sheets.getValues(SHEET_ID, `${q(RETURNS_TAB)}!A1:A200`);
+  const rows = await sheets.getFormulas(SHEET_ID, `${q(RETURNS_TAB)}!A1:C200`);
   const stamp = new Date().toLocaleString('en-GB', { timeZone: 'Africa/Cairo' });
   for (const [key, c] of Object.entries(counts)) {
     let r = rows.findIndex((row) => String(row?.[0] || '') === key) + 1;
@@ -264,9 +267,12 @@ async function writeReturns(counts, bostaComplete, qpFresh) {
       await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!A${r}:D${r}`, [[`'${key}`, 0, 0, `=B${r}+C${r}`]]);
     }
     // Only overwrite Bosta's count when the full Bosta listing was available.
-    if (bostaComplete) await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!B${r}`, [[c.bosta]]);
+    const prev = rows[r - 1] || [];
+    const bosta = Math.max(Number(prev[1]) || 0, c.bosta);
+    const qp = Math.max(Number(prev[2]) || 0, c.qp);
+    if (bostaComplete && bosta !== Number(prev[1])) await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!B${r}`, [[bosta]]);
     // Only overwrite QP's count when the QP scraper has synced recently.
-    if (qpFresh) await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!C${r}`, [[c.qp]]);
+    if (qpFresh && qp !== Number(prev[2])) await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!C${r}`, [[qp]]);
     await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!E${r}`, [[stamp]]);
   }
 }
