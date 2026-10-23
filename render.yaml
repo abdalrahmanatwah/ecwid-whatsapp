@@ -53,3 +53,12 @@ services:
         value: "true"
       - key: SHIP_DELAY_MIN
         value: "15"
+      # Sales sheet sync (src/sheet_sync.js): delivered Bosta + QP orders → Google Sheet, hourly.
+      - key: SALES_SHEET_ID
+        value: 1DW0ggYJKDeSix1mqsMr3Lr5U7xGW4Y6yBzb5hLENbSw
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false
+      - key: SHEET_SYNC_START
+        value: "2026-10-22"
+      - key: SHEET_SYNC_INTERVAL_MINUTES
+        value: "60"

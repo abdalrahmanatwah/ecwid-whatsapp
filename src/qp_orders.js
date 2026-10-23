@@ -36,6 +36,11 @@ function loadOrders() {
   }
 }
 
+// Every QP order ever synced (used by the sales-sheet sync).
+export function allQpOrders() {
+  return Object.values(loadOrders());
+}
+
 function saveOrders(orders) {
   const dir = path.dirname(QP_STORE_FILE);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });

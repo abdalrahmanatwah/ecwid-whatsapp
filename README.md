@@ -177,6 +177,62 @@ accident.
 
 ---
 
+## Sales sheet sync (Bosta + QP → Google Sheet)
+
+Every hour, delivered orders are added to the **499K Sales** Google Sheet
+(`src/sheet_sync.js`, rules in `src/sales_rows.js`):
+
+- **Sales** → new rows above the `الإجمالي` row of that month's tab, with live
+  formulas (net after shipping, wholesale, profit). Bosta shipping uses the
+  estimate cell in `الافتراضات`; QP uses the real fee. Wholesale comes from the
+  per-model price table in `الافتراضات!E4:F` (longest matching key wins); a model
+  not in the table uses its brand default and is marked "موديل جديد".
+- **Review** → anything a person should decide goes to the `مراجعة` tab instead:
+  zero collection, unclear description, non-shoe items (bags, insoles only),
+  partial deliveries, exchanges.
+- **Returns** → refused/returned counts per month are written to the
+  `المرتجعات` tab; each month tab's summary reads its row from there.
+- **New month** → the first sale of a new month copies the latest month tab,
+  empties it and points its summary at the new month. Type that month's ad spend
+  in it.
+- **No duplicates** → each row carries its shipment id in column Q
+  (`bosta:<tracking>` / `qp:<serial>`), and handled ids are remembered in
+  `/var/data/sheet_sync.json`, so a row you delete on purpose is not re-added.
+  Orders resolved before `SHEET_SYNC_START` are never touched.
+
+**Bosta coverage.** Some orders go straight to Bosta without Ecwid, so the sync
+lists all recent Bosta deliveries. Bosta doesn't document that endpoint, so it
+tries `POST /api/v2/deliveries/search`, then `GET /api/v1/deliveries`, then
+`GET /api/v0/deliveries`. If none works it falls back to the deliveries this
+service tracks through Ecwid tracking numbers (and doesn't overwrite Bosta's
+return count, since that list is incomplete). Open
+`/dashboard/sheet-sync/bosta-probe` once after deploying to see which endpoint
+works on your account.
+
+**Setup (one time):**
+1. Google Cloud → new project → enable **Google Sheets API** → create a
+   **service account** → Keys → Add key → JSON (downloads a file).
+2. Share the 499K Sales sheet with the service account's email as **Editor**.
+3. On Render, set `GOOGLE_SERVICE_ACCOUNT_JSON` to the whole contents of that
+   JSON file. `SALES_SHEET_ID` is already in `render.yaml`.
+
+**Endpoints** (behind the dashboard password):
+- `/dashboard/sheet-sync/status` — last run, what was added, errors
+- `/dashboard/sheet-sync/run?dry=1` — show what would be added, without writing
+- `/dashboard/sheet-sync/run` — run now
+- `/dashboard/sheet-sync/bosta-probe?tracking=<one tracking number>` — which
+  Bosta listing endpoint works, and the delivery field layout (no customer data)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `SALES_SHEET_ID` | — | Spreadsheet id (from its URL) |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | — | Service-account key file contents |
+| `SHEET_SYNC_START` | `2026-10-22` | Ignore orders resolved before this day |
+| `SHEET_SYNC_INTERVAL_MINUTES` | `60` | How often it runs |
+| `SHEET_SYNC_DRY_RUN` | `false` | Log only, never write |
+| `SHEET_SYNC` | `true` | `false` turns it off |
+| `SHEET_SYNC_BOSTA_DAYS` | `45` | How far back to list Bosta deliveries |
+
 ## Configuration reference
 
 | Variable | Meaning |
