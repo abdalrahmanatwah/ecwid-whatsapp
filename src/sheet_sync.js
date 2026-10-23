@@ -85,8 +85,15 @@ async function bostaFromEcwid(processed) {
   return out;
 }
 
+// QP data is only trusted for return counts when the scraper has synced
+// recently; a stopped scraper would otherwise drive the counts to zero.
+const QP_FRESH_HOURS = Number(process.env.SHEET_SYNC_QP_FRESH_HOURS || 3);
+
 async function gatherOrders(state) {
-  const orders = allQpOrders().map(normalizeQp);
+  const qpRaw = allQpOrders();
+  const qpLastSeen = qpRaw.reduce((m, o) => (o.last_seen_at && o.last_seen_at > m ? o.last_seen_at : m), '');
+  const qpFresh = Boolean(qpLastSeen) && Date.now() - new Date(qpLastSeen).getTime() < QP_FRESH_HOURS * 3_600_000;
+  const orders = qpRaw.map(normalizeQp);
   let bostaSource = 'none';
   let bostaComplete = false;
   if (bostaConfigured()) {
@@ -110,7 +117,7 @@ async function gatherOrders(state) {
     }
     for (const d of raws) if (d?.trackingNumber) orders.push(normalizeBosta(d));
   }
-  return { orders, bostaSource, bostaComplete };
+  return { orders, bostaSource, bostaComplete, qpFresh, qpLastSeen };
 }
 
 // ---- sheet helpers ------------------------------------------------------------------
@@ -246,7 +253,7 @@ async function ensureReturnsTab(tabs) {
   await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!A1:E1`, [['الشهر', 'مرتجع بوسطة', 'مرتجع QP', 'الإجمالي', 'آخر تحديث']]);
 }
 
-async function writeReturns(counts, bostaComplete) {
+async function writeReturns(counts, bostaComplete, qpFresh) {
   const rows = await sheets.getValues(SHEET_ID, `${q(RETURNS_TAB)}!A1:A200`);
   const stamp = new Date().toLocaleString('en-GB', { timeZone: 'Africa/Cairo' });
   for (const [key, c] of Object.entries(counts)) {
@@ -258,7 +265,8 @@ async function writeReturns(counts, bostaComplete) {
     }
     // Only overwrite Bosta's count when the full Bosta listing was available.
     if (bostaComplete) await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!B${r}`, [[c.bosta]]);
-    await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!C${r}`, [[c.qp]]);
+    // Only overwrite QP's count when the QP scraper has synced recently.
+    if (qpFresh) await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!C${r}`, [[c.qp]]);
     await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!E${r}`, [[stamp]]);
   }
 }
@@ -278,14 +286,18 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
   running = true;
   try {
     const priceTable = await readPriceTable();
-    const { orders, bostaSource, bostaComplete } = await gatherOrders(state);
+    const { orders, bostaSource, bostaComplete, qpFresh, qpLastSeen } = await gatherOrders(state);
 
     const sales = [];
     const reviews = [];
     const returnCounts = {};
+    const tally = {};
+    const latestDelivered = [];
     const startMonth = monthKey(START);
     for (const n of orders) {
       const c = classify(n, priceTable);
+      tally[`${n.carrier}:${c.action}`] = (tally[`${n.carrier}:${c.action}`] || 0) + 1;
+      if (n.deliveredDate) latestDelivered.push({ id: n.id, delivered: n.deliveredDate, action: c.action, amount: n.amount });
       if (c.action === 'return') {
         const key = monthKey(c.date);
         if (!key || key < startMonth) continue;
@@ -335,7 +347,7 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
     // Return counts.
     if (!dryRun && Object.keys(returnCounts).length) {
       await ensureReturnsTab(tabs);
-      await writeReturns(returnCounts, bostaComplete);
+      await writeReturns(returnCounts, bostaComplete, qpFresh);
     }
 
     const result = {
@@ -343,7 +355,11 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
       dryRun,
       bostaSource,
       bostaComplete,
+      qpFresh,
+      qpLastSyncedAt: qpLastSeen || null,
       ordersSeen: orders.length,
+      byAction: tally,
+      latestDelivered: latestDelivered.sort((a, b) => b.delivered.localeCompare(a.delivered)).slice(0, 8),
       salesAdded: added.map((s) => ({ id: s.id, date: s.date, name: s.name, amount: s.amount })),
       reviewAdded: newReviews.map((r) => ({ id: r.id, date: r.date, reason: r.reason, amount: r.amount })),
       returnCounts,
