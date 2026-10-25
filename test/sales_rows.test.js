@@ -98,3 +98,13 @@ test('dates: Cairo calendar day and Sheets serial', () => {
   assert.equal(cairoDate('2026-10-20T22:30:00Z'), '2026-10-21'); // after midnight in Cairo
   assert.equal(sheetSerial('2026-10-14'), 46309); // matches the existing sheet
 });
+
+test('QP Delivered before the collected date is filled: dated by when we saw it change', () => {
+  const seen = { status: 'Delivered', collected: null, first_seen_at: '2026-10-24T09:00:00Z', status_changed_at: '2026-10-25T15:10:00Z' };
+  const c = classify(qp(seen), PRICES);
+  assert.equal(c.action, 'sale');
+  assert.equal(c.date, '2026-10-25');
+  // imported already Delivered with no date → not guessed
+  const imported = { status: 'Delivered', collected: null, first_seen_at: '2026-10-23T13:14:00Z', status_changed_at: '2026-10-23T13:14:00Z' };
+  assert.equal(classify(qp(imported), PRICES).action, 'skip');
+});

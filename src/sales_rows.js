@@ -162,6 +162,18 @@ export function normalizeBosta(d) {
   };
 }
 
+// QP marks an order Delivered before it fills the "collected" date (that comes
+// when QP settles the cash). Until then, use the moment our scraper saw the
+// status change to Delivered — but only when it really changed while we were
+// watching (status_changed_at after first_seen_at). Orders first imported
+// already Delivered with no date stay undated, so old orders never land on the
+// day of an import.
+function qpSeenDeliveredAt(o) {
+  if (!o.status_changed_at || !o.first_seen_at) return null;
+  if (new Date(o.status_changed_at).getTime() <= new Date(o.first_seen_at).getTime()) return null;
+  return cairoDate(o.status_changed_at);
+}
+
 export function normalizeQp(o) {
   return {
     id: `qp:${o.serial}`,
@@ -175,7 +187,7 @@ export function normalizeQp(o) {
     description: String(o.shipment_contents || '').replace(/\s+/g, ' ').trim(),
     note: String(o.status_note || '').replace(/\s+/g, ' ').trim(),
     createdDate: cairoDate(o.order_date),
-    deliveredDate: o.status === 'Delivered' ? cairoDate(o.collected) : null,
+    deliveredDate: o.status === 'Delivered' ? cairoDate(o.collected) || qpSeenDeliveredAt(o) : null,
     returnedDate: cairoDate(o.returned),
   };
 }
