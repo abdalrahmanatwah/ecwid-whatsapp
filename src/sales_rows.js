@@ -19,7 +19,7 @@ const BRAND_PATTERNS = [
   ['ASICS', /\basics\b/i],
   ['ADIDAS', /\badidas\b|\badizero\b|\by-3\b|\bterrex\b|\bhyperboost\b|\bultraboost\b/i],
   ['NIKE', /\bnike\b|\bvomero\b|\bpegasus\b/i],
-  ['ON', /\bon running\b|\bon cloud|\bcloudtilt\b|\bcloudrock\b|\bcloudmonster\b|\bcloudsurfer\b|^\s*on\s+(roger|cloud)/i],
+  ['ON', /\bon running\b|\bon cloud|\bcloud ?tilt\b|\bcloudrock\b|\bcloudmonster\b|\bcloudsurfer\b|\broger\b|\bon fire\b|^\s*on\s+(the\s+)?(roger|cloud|fire)/i],
   ['OTHER', /\breebok\b|north face|\bbrooks\b|new balance|\btimberland\b|\bpuma\b|\bskechers\b|\bhoka\b|\bsaucony\b|\bmizuno\b|\bunder armour\b/i],
 ];
 
@@ -196,6 +196,12 @@ export function normalizeQp(o) {
 
 const MIN_PAIR_PRICE = 1700;
 
+// Short carrier descriptions like "on fire 44" are ON The Roger Pro; spell the
+// model out so the sheet's supplier section (which counts "roger") sees it.
+function withModelName(text) {
+  return /\bon fire\b/i.test(text) && !/roger/i.test(text) ? `ON The Roger Pro (${text})` : text;
+}
+
 // Drops the insole add-on text that carriers append after the size.
 function cleanItemName(text) {
   return text.replace(/\s*[\/,]?\s*(\d+\s*)?(comfort foam insoles?|فرش).*$/i, '').trim() || text;
@@ -225,7 +231,7 @@ function reviewOrSale(n, priceTable) {
   const newModels = [];
   for (const s of shoes) {
     pairs[s.brand]++;
-    const hit = lookupModelPrice(s.text, priceTable);
+    const hit = lookupModelPrice(withModelName(s.text), priceTable);
     costs.push(hit ? { price: hit.price } : { brand: s.brand });
     if (!hit) newModels.push(s.text);
   }
@@ -237,7 +243,7 @@ function reviewOrSale(n, priceTable) {
   return {
     action: 'sale',
     ...base,
-    name: shoes.map((s) => cleanItemName(s.text)).join(' + '),
+    name: shoes.map((s) => withModelName(cleanItemName(s.text))).join(' + '),
     brand: brandsUsed.join(' + '),
     insoles,
     pairs,
