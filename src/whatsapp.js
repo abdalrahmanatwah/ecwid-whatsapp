@@ -15,11 +15,33 @@ const VERSION = process.env.GRAPH_VERSION || 'v21.0';
 const PHONE_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 const TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
 const TEMPLATE = process.env.WHATSAPP_TEMPLATE_NAME || 'order_confirmation';
-const LANG = process.env.WHATSAPP_TEMPLATE_LANG || 'en';
+// Default 'ar' to match every other module (server.js, ecwid_tracking.js,
+// notify.js, abandoned_carts.js) — the order_confirmation template only
+// exists in Arabic, and an 'en' default made every poll fail with #132001.
+const LANG = process.env.WHATSAPP_TEMPLATE_LANG || 'ar';
 
 const ENDPOINT = `https://graph.facebook.com/${VERSION}/${PHONE_ID}/messages`;
 
+// #132001 = "template name does not exist in the translation": the template
+// exists, but not in the language code we sent. Retry once with the other
+// language so a wrong env var can't silently block every customer message.
+const ALT_LANG = { ar: 'en', en: 'ar' };
+
 async function send(payload) {
+  try {
+    return await sendRaw(payload);
+  } catch (err) {
+    const code = payload?.template?.language?.code;
+    const alt = ALT_LANG[code];
+    if (err.code === 132001 && alt) {
+      console.warn(`[whatsapp] template "${payload.template.name}" not found in "${code}", retrying in "${alt}"`);
+      return sendRaw({ ...payload, template: { ...payload.template, language: { code: alt } } });
+    }
+    throw err;
+  }
+}
+
+async function sendRaw(payload) {
   const res = await fetch(ENDPOINT, {
     method: 'POST',
     headers: {
@@ -30,7 +52,9 @@ async function send(payload) {
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(`WhatsApp send failed: ${res.status} ${JSON.stringify(data)}`);
+    const err = new Error(`WhatsApp send failed: ${res.status} ${JSON.stringify(data)}`);
+    err.code = data?.error?.code;
+    throw err;
   }
   return data;
 }
