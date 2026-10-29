@@ -108,3 +108,20 @@ test('QP Delivered before the collected date is filled: dated by when we saw it 
   const imported = { status: 'Delivered', collected: null, first_seen_at: '2026-10-23T13:14:00Z', status_changed_at: '2026-10-23T13:14:00Z' };
   assert.equal(classify(qp(imported), PRICES).action, 'skip');
 });
+
+test('ON The Roger Pro is recognised however it is written', async () => {
+  const { detectBrand } = await import('../src/sales_rows.js');
+  for (const t of ['on fire 44', 'On The Roger Pro Fire Currant Blue Horizon Size: 45', 'on roger 45', 'ON Cloud Tilt Remix All Day Trainers']) {
+    assert.equal(detectBrand(t), 'ON', t);
+  }
+  assert.equal(detectBrand('Nike Court Air Zoom Vapor 11'), 'NIKE');
+  assert.equal(detectBrand('3 T-shirts'), null);
+});
+
+test('"on fire 44" becomes an ON The Roger Pro sale the supplier section can count', () => {
+  const c = classify(bosta({ description: 'on fire 44', cod: 3000 }), [{ key: 'roger pro', price: 1850 }]);
+  assert.equal(c.action, 'sale');
+  assert.equal(c.brand, 'ON');
+  assert.match(c.name, /Roger Pro/);
+  assert.deepEqual(c.costs, [{ price: 1850 }]);
+});
