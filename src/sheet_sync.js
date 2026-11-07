@@ -26,7 +26,7 @@ import { store } from './store.js';
 import { notifyMerchant } from './notify.js';
 import { metaAdsConfigured, monthSpend } from './meta_ads.js';
 import {
-  normalizeBosta, normalizeQp, classify, saleRowValues, reviewRowValues, monthKey,
+  normalizeBosta, normalizeQp, classify, saleRowValues, reviewRowValues, monthKey, bostaFee, bostaCustomerPaid, returnCost,
 } from './sales_rows.js';
 
 const SHEET_ID = process.env.SALES_SHEET_ID || '';
@@ -153,6 +153,7 @@ async function readLayout(tab) {
     total,
     ads: find(/^مصاريف الإعلانات/, total),
     returns: find(/^أوردرات مرفوضة/, total),
+    returnsCost: find(/^تكلفة المرتجعات/, total),
   };
 }
 
@@ -161,6 +162,12 @@ async function existingIds(tab, col) {
   return new Set(vals.map((r) => String(r?.[0] || '').trim()).filter(Boolean));
 }
 
+const RETURN_COST_ESTIMATE = `${q(ASSUMPTIONS)}!$B$15`;
+// Actual shipping cost of the month's returns (F) plus the estimate for
+// returns whose cost isn't known (total D minus priced H).
+const returnsCostFormula = (key) =>
+  `=IFERROR(VLOOKUP("${key}",${q(RETURNS_TAB)}!$A:$H,6,FALSE),0)` +
+  `+MAX(0,IFERROR(VLOOKUP("${key}",${q(RETURNS_TAB)}!$A:$H,4,FALSE),0)-IFERROR(VLOOKUP("${key}",${q(RETURNS_TAB)}!$A:$H,8,FALSE),0))*${RETURN_COST_ESTIMATE}`;
 const returnsFormula = (key) => `=IFERROR(VLOOKUP("${key}",${q(RETURNS_TAB)}!$A:$D,4,FALSE),0)`;
 
 // Month tabs with their "YYYY-MM" key, newest first.
@@ -216,6 +223,7 @@ async function createMonthTab(tabs, key) {
   await sheets.updateValues(SHEET_ID, `${q(name)}!A3`, [[`'${key}`]]);
   if (after.ads) await sheets.updateValues(SHEET_ID, `${q(name)}!C${after.ads}:F${after.ads}`, [['مصاريف الإعلانات (اكتبها هنا)', null, null, 0]]);
   if (after.returns) await sheets.updateValues(SHEET_ID, `${q(name)}!F${after.returns}`, [[returnsFormula(key)]]);
+  if (after.returnsCost) await sheets.updateValues(SHEET_ID, `${q(name)}!F${after.returnsCost}`, [[returnsCostFormula(key)]]);
 
   console.log(`[sheet] created month tab "${name}" from "${source.title}"`);
   await notifyMerchant(`📅 اتعمل تاب جديد في شيت المبيعات: ${name}. اكتب مصاريف الإعلانات بتاعة الشهر فيه.`);
@@ -254,11 +262,16 @@ async function ensureReturnsTab(tabs) {
   await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!A1:E1`, [['الشهر', 'مرتجع بوسطة', 'مرتجع QP', 'الإجمالي', 'آخر تحديث']]);
 }
 
+const COST_HEADERS = ['تكلفة شحن المرتجعات (فعلي)', 'مرتجعات اتعرف سعرها'];
+
 // Counts only ever go up: a refused shipment stays refused, while a month's
 // early days eventually fall out of the carrier lookback window (Bosta: 45
 // days, QP: 35), which would otherwise shrink an older month's count.
-async function writeReturns(counts, bostaComplete, qpFresh) {
-  const rows = await sheets.getFormulas(SHEET_ID, `${q(RETURNS_TAB)}!A1:C200`);
+async function writeReturns(counts, bostaComplete, qpFresh, costs = {}) {
+  const rows = await sheets.getFormulas(SHEET_ID, `${q(RETURNS_TAB)}!A1:H200`);
+  if (String(rows[0]?.[5] || '') !== COST_HEADERS[0]) {
+    await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!F1:H1`, [[COST_HEADERS[0], null, COST_HEADERS[1]]]);
+  }
   const stamp = new Date().toLocaleString('en-GB', { timeZone: 'Africa/Cairo' });
   for (const [key, c] of Object.entries(counts)) {
     let r = rows.findIndex((row) => String(row?.[0] || '') === key) + 1;
@@ -274,8 +287,52 @@ async function writeReturns(counts, bostaComplete, qpFresh) {
     if (bostaComplete && bosta !== Number(prev[1])) await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!B${r}`, [[bosta]]);
     // Only overwrite QP's count when the QP scraper has synced recently.
     if (qpFresh && qp !== Number(prev[2])) await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!C${r}`, [[qp]]);
+    const cost = costs[key];
+    if (cost && (cost.total !== Number(prev[5]) || cost.priced !== Number(prev[7]))) {
+      await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!F${r}:H${r}`, [[cost.total, null, cost.priced]]);
+    }
     await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!E${r}`, [[stamp]]);
   }
+}
+
+// Points each month tab's "تكلفة المرتجعات" cell at the actual-cost formula.
+async function ensureReturnsCostFormulas(tabs) {
+  for (const { tab, key } of monthTabsOf(tabs)) {
+    const layout = await readLayout(tab.title);
+    if (!layout.returnsCost) continue;
+    const want = returnsCostFormula(key);
+    const [[current = ''] = []] = await sheets.getFormulas(SHEET_ID, `${q(tab.title)}!F${layout.returnsCost}`);
+    if (String(current) !== want) await sheets.updateValues(SHEET_ID, `${q(tab.title)}!F${layout.returnsCost}`, [[want]]);
+  }
+}
+
+// ---- actual Bosta fees ----------------------------------------------------------------
+
+const MAX_FEE_READS = Number(process.env.SHEET_SYNC_MAX_FEE_READS || 60);
+
+// Bosta's list endpoint has no fee; read single deliveries for the ones that
+// need it (new sales, and returns not yet priced), within a per-run budget.
+async function fillBostaFees(items, state) {
+  let reads = 0;
+  for (const it of items) {
+    if (it.carrier !== 'bosta' || it.fee > 0) continue;
+    const cached = state.fees?.[it.id];
+    if (cached?.fee > 0) { it.fee = cached.fee; it.customerPaid = cached.customerPaid || 0; continue; }
+    if (reads >= MAX_FEE_READS) continue;
+    reads++;
+    try {
+      const st = await getDeliveryState(it.id.replace(/^bosta:/, ''));
+      const fee = bostaFee(st?.raw);
+      if (fee > 0) {
+        it.fee = fee;
+        it.customerPaid = bostaCustomerPaid(st.raw);
+        (state.fees ||= {})[it.id] = { fee, customerPaid: it.customerPaid, at: new Date().toISOString() };
+      }
+    } catch (e) {
+      console.warn(`[sheet] Bosta fee read failed for ${it.id}:`, e.message);
+    }
+  }
+  return reads;
 }
 
 
@@ -337,6 +394,7 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
     const sales = [];
     const reviews = [];
     const returnCounts = {};
+    const returnsSeen = [];
     const tally = {};
     const latestDelivered = [];
     const startMonth = monthKey(START);
@@ -349,9 +407,34 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
         if (!key || key < startMonth) continue;
         returnCounts[key] ||= { bosta: 0, qp: 0 };
         returnCounts[key][c.carrier]++;
+        returnsSeen.push(c);
       } else if ((c.action === 'sale' || c.action === 'review') && c.date && c.date >= START && !state.processed[c.id]) {
         (c.action === 'sale' ? sales : reviews).push(c);
       }
+    }
+
+    // Actual Bosta fees: new sales first, then returns still unpriced.
+    const feeReads = await fillBostaFees(
+      [...sales, ...returnsSeen.filter((r) => state.returns?.[r.id]?.cost == null)],
+      state
+    );
+
+    // Every return ever seen is remembered with its month and actual cost, so
+    // a month's cost total doesn't shrink when its early days fall out of the
+    // carrier lookback windows.
+    state.returns ||= {};
+    for (const r of returnsSeen) {
+      const prev = state.returns[r.id];
+      const cost = returnCost(r);
+      if (!prev || (prev.cost == null && cost != null)) {
+        state.returns[r.id] = { month: monthKey(r.date), carrier: r.carrier, cost };
+      }
+    }
+    const returnCosts = {};
+    for (const r of Object.values(state.returns)) {
+      if (!r.month || r.month < startMonth) continue;
+      const m = (returnCosts[r.month] ||= { total: 0, priced: 0 });
+      if (r.cost != null) { m.total += r.cost; m.priced++; }
     }
 
     let tabs = await sheets.getTabs(SHEET_ID);
@@ -393,7 +476,8 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
     // Return counts.
     if (!dryRun && Object.keys(returnCounts).length) {
       await ensureReturnsTab(tabs);
-      await writeReturns(returnCounts, bostaComplete, qpFresh);
+      await writeReturns(returnCounts, bostaComplete, qpFresh, returnCosts);
+      await ensureReturnsCostFormulas(await sheets.getTabs(SHEET_ID));
     }
 
     // Ad spend from Meta Ads Manager (never blocks the rest of the sync).
@@ -418,6 +502,8 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
       salesAdded: added.map((s) => ({ id: s.id, date: s.date, name: s.name, amount: s.amount })),
       reviewAdded: newReviews.map((r) => ({ id: r.id, date: r.date, reason: r.reason, amount: r.amount })),
       returnCounts,
+      returnCosts,
+      bostaFeeReads: feeReads,
       adSpend,
     };
     state.lastRunAt = result.at;
