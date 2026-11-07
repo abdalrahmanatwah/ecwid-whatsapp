@@ -129,6 +129,27 @@ function bostaTypeName(t) {
     .replace(/^RETURN_TO_ORIGIN$|^RETURNED_TO_ORIGIN$/, 'RTO');
 }
 
+const num = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+};
+
+export function bostaFee(d) {
+  const direct = num(d?.shipmentFees);
+  if (direct != null && direct > 0) return direct;
+  const cycle = d?.wallet?.cashCycle;
+  const fromCycle = num(cycle?.shipping_fees);
+  if (fromCycle != null && fromCycle > 0) return fromCycle;
+  return null;
+}
+
+export function bostaCustomerPaid(d) {
+  const flex = d?.flexShippingInfo;
+  if (flex?.isAmountCollected) return num(flex.amountToBeCollected) || 0;
+  const cycleFlex = num(d?.wallet?.cashCycle?.flex_ship_amount);
+  return cycleFlex && cycleFlex > 0 ? cycleFlex : 0;
+}
+
 export function normalizeBosta(d) {
   const state = d.state || {};
   const stateValue = String(state.value || state.state || d.maskedState || d.deliveryState || '');
@@ -154,7 +175,12 @@ export function normalizeBosta(d) {
     oldType,
     state: stateValue,
     amount: Number(d.cod ?? d.codAmount ?? 0) || 0,
-    fee: null, // Bosta's fee isn't on the delivery; the sheet uses the estimate cell
+    // Bosta's fee is only on the single-delivery read (shipmentFees, or the
+    // cash-cycle breakdown once settled); the list endpoint leaves it out, so
+    // it's often null here and sheet_sync fills it in with a single read.
+    fee: bostaFee(d),
+    // "Flex ship": what a customer who refused paid toward the shipping.
+    customerPaid: bostaCustomerPaid(d),
     description: String(description).replace(/\s+/g, ' ').trim(),
     note: String(d.notes || ''),
     createdDate: cairoDate(d.createdAt),
@@ -183,7 +209,10 @@ export function normalizeQp(o) {
     oldType: '',
     state: String(o.status || ''),
     amount: Number(o.total_amount ?? 0) || 0,
+    // QP charges you only what the customer didn't pay: a refusal where the
+    // customer paid the shipping shows total_fees 0.
     fee: Number(o.total_fees ?? 0) || 0,
+    customerPaid: 0,
     description: String(o.shipment_contents || '').replace(/\s+/g, ' ').trim(),
     note: String(o.status_note || '').replace(/\s+/g, ' ').trim(),
     createdDate: cairoDate(o.order_date),
@@ -237,7 +266,7 @@ function reviewOrSale(n, priceTable) {
   }
   const brandsUsed = [...new Set(shoes.map((s) => s.brand))];
   const notes = [];
-  if (n.carrier === 'bosta') notes.push('شحن تقديري');
+  if (n.carrier === 'bosta' && !(n.fee > 0)) notes.push('شحن تقديري');
   if (newModels.length) notes.push('الجملة من الافتراضات (موديل جديد)');
 
   return {
@@ -258,11 +287,11 @@ export function classify(n, priceTable) {
     const refused = /رفض|لاغى|لاغي|ملغ/.test(n.note);
     const neverLeft = /مجاش من الشركة/.test(n.note);
     if (n.state === 'Delivered' && n.deliveredDate) {
-      if (n.amount <= 0 && n.returnedDate) return { action: 'return', id: n.id, carrier: n.carrier, date: n.createdDate };
+      if (n.amount <= 0 && n.returnedDate) return { action: 'return', id: n.id, carrier: n.carrier, date: n.createdDate, fee: n.fee, customerPaid: n.customerPaid || 0 };
       return reviewOrSale(n, priceTable);
     }
     if (n.state === 'Undelivered' && !neverLeft && (n.returnedDate || refused)) {
-      return { action: 'return', id: n.id, carrier: n.carrier, date: n.createdDate };
+      return { action: 'return', id: n.id, carrier: n.carrier, date: n.createdDate, fee: n.fee, customerPaid: n.customerPaid || 0 };
     }
     return { action: 'skip' };
   }
@@ -270,10 +299,10 @@ export function classify(n, priceTable) {
   // Bosta
   const delivered = /delivered/i.test(n.state) && !/exchanged/i.test(n.state);
   if (n.type === 'RTO' && (!n.oldType || n.oldType === 'SEND')) {
-    return { action: 'return', id: n.id, carrier: n.carrier, date: n.createdDate };
+    return { action: 'return', id: n.id, carrier: n.carrier, date: n.createdDate, fee: n.fee, customerPaid: n.customerPaid || 0 };
   }
   if (n.type === 'SEND' && /returned|return to|cancel/i.test(n.state)) {
-    return { action: 'return', id: n.id, carrier: n.carrier, date: n.createdDate };
+    return { action: 'return', id: n.id, carrier: n.carrier, date: n.createdDate, fee: n.fee, customerPaid: n.customerPaid || 0 };
   }
   if (n.type === 'SEND' && delivered && n.deliveredDate) return reviewOrSale(n, priceTable);
   if (/EXCHANGE|CASH_COLLECTION/.test(n.type) && n.amount > 0 && /delivered|exchanged|collected/i.test(n.state)) {
@@ -306,7 +335,7 @@ export function saleRowValues(sale, r) {
     sale.brand,
     sale.insoles,
     sale.amount,
-    sale.carrier === 'bosta' ? `=${BOSTA_SHIPPING_CELL}` : sale.fee,
+    sale.carrier === 'bosta' && !(sale.fee > 0) ? `=${BOSTA_SHIPPING_CELL}` : sale.fee,
     `=F${r}-G${r}`,
     `=${cost}+E${r}*${INSOLE_COST_CELL}`,
     `=H${r}-I${r}`,
@@ -328,4 +357,11 @@ export function reviewRowValues(item) {
     item.id,
     '',
   ];
+}
+
+// What a return actually cost you in shipping: the carrier's fee minus what
+// the customer paid toward it. null when the fee isn't known yet.
+export function returnCost(r) {
+  if (!(r.fee > 0) && r.carrier === 'bosta') return null;
+  return Math.max(0, (Number(r.fee) || 0) - (Number(r.customerPaid) || 0));
 }

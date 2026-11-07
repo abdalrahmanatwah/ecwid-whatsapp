@@ -125,3 +125,29 @@ test('"on fire 44" becomes an ON The Roger Pro sale the supplier section can cou
   assert.match(c.name, /Roger Pro/);
   assert.deepEqual(c.costs, [{ price: 1850 }]);
 });
+
+test('actual shipping: Bosta fee from the delivery, customer-paid refusals cost less', async () => {
+  const { bostaFee, bostaCustomerPaid, returnCost } = await import('../src/sales_rows.js');
+  assert.equal(bostaFee({ shipmentFees: 100 }), 100);
+  assert.equal(bostaFee({ wallet: { cashCycle: { shipping_fees: '95.5' } } }), 95.5);
+  assert.equal(bostaFee({}), null);
+  assert.equal(bostaCustomerPaid({ flexShippingInfo: { isAmountCollected: true, amountToBeCollected: 100 } }), 100);
+  assert.equal(bostaCustomerPaid({ flexShippingInfo: { isAmountCollected: false, amountToBeCollected: 100 } }), 0);
+  assert.equal(returnCost({ carrier: 'bosta', fee: 100, customerPaid: 100 }), 0);
+  assert.equal(returnCost({ carrier: 'bosta', fee: 100, customerPaid: 70 }), 30);
+  assert.equal(returnCost({ carrier: 'bosta', fee: null }), null);
+  // QP refusal where the customer paid the shipping: QP charges 0
+  const r = classify(qp({ status: 'Undelivered', collected: null, returned: '2026-10-20', total_fees: 0, status_note: 'رفض الاستلام ودفع الشحن100' }), PRICES);
+  assert.equal(r.action, 'return');
+  assert.equal(returnCost(r), 0);
+  const r2 = classify(qp({ status: 'Undelivered', collected: null, returned: '2026-10-20', total_fees: 95, status_note: 'لايرد' }), PRICES);
+  assert.equal(returnCost(r2), 95);
+});
+
+test('Bosta sale row uses the actual fee when known, the estimate cell otherwise', () => {
+  const known = classify(bosta({ shipmentFees: 110 }), PRICES);
+  assert.equal(saleRowValues(known, 9)[6], 110);
+  assert.doesNotMatch(known.note, /شحن تقديري/);
+  const unknown = classify(bosta(), PRICES);
+  assert.equal(saleRowValues(unknown, 9)[6], "='الافتراضات'!$B$9");
+});
