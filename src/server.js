@@ -14,10 +14,14 @@ import { handleCartButton } from './abandoned_carts.js';
 import { socialProofRouter } from './social_proof.js';
 import { sheetSyncRouter } from './sheet_sync.js';
 import { qpEcwidRouter } from './qp_ecwid.js';
+import { salesPageRouter, pageUrl } from './sales_page.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(express.json({ limit: '10mb' }));
+
+// Public read-only sales page behind a private link (/s/<slug>, no login).
+app.use('/s', salesPageRouter);
 
 // Social proof: customer photos under the product gallery (widget.js + photos.json public; /admin gated).
 app.use('/social-proof', socialProofRouter);
@@ -57,6 +61,7 @@ app.get('/', (_req, res) => res.send('Ecwid → WhatsApp order confirmation: run
  * Both the page and its API are behind Basic Auth (DASHBOARD_PASSWORD)*
  * ------------------------------------------------------------------ */
 app.use('/dashboard/sheet-sync', requireAuth, sheetSyncRouter);
+app.get('/dashboard/sales-page-link', requireAuth, (_req, res) => res.json({ url: pageUrl() }));
 app.use('/dashboard/qp-ecwid', requireAuth, qpEcwidRouter); // QP delivered → Ecwid Delivered + Paid
 app.use('/dashboard', requireAuth, dashboardRouter);
 app.get('/dashboard', requireAuth, (_req, res) => {
@@ -224,6 +229,7 @@ async function handleReply({ action, orderId, from }) {
 }
 
 app.listen(PORT, () => {
+  pageUrl(); // creates the private sales-page link on first boot (sent on WhatsApp)
   console.log(`Listening on :${PORT}`);
   const interval = Number(process.env.POLL_INTERVAL_SECONDS || 60);
   startPolling(interval);
