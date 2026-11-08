@@ -147,7 +147,7 @@ async function trySendPostponed(customer, orderNumber, orderId) {
 // On a return, add every line item's quantity back to its size's stock in Ecwid.
 // Uses the order's own data (product + selected size), so no package text is parsed.
 // Never throws — a stock hiccup must not block the order from being marked returned.
-async function restockOrder(orderId) {
+export async function restockOrder(orderId) {
   let order;
   try {
     order = await getOrder(orderId);
@@ -327,10 +327,10 @@ export async function trackFromEcwid() {
           const askNow = REJECTED_TEMPLATE && customer && !rec.exceptionNotified;
           if (askNow) await trySend(customer, REJECTED_TEMPLATE, LANG, rec.orderId);
           await restockOrder(rec.orderId); // put the returned size(s) back into stock
-          try { await updateOrder(rec.orderId, { fulfillmentStatus: RETURNED_STATUS }); }
+          try { await updateOrder(rec.orderId, { fulfillmentStatus: RETURNED_STATUS, paymentStatus: CANCEL_STATUS }); }
           catch (e) { console.warn(`[track] couldn't set Ecwid ${RETURNED_STATUS} for ${rec.orderId}:`, e.message); }
           store.upsert(rec.orderId, { status: 'returned', exceptionNotified: true });
-          await notifyMerchant(`↩️ Order ${rec.orderId} RETURNED — restocked items and marked Returned on Ecwid${askNow ? ', asked the customer the reason' : ''}.`);
+          await notifyMerchant(`↩️ Order ${rec.orderId} RETURNED — restocked items and marked Returned + Cancelled on Ecwid${askNow ? ', asked the customer the reason' : ''}.`);
           console.log(`[track] order ${rec.orderId} returned — restocked + Ecwid updated${askNow ? ' + reason message sent' : ''}`);
         } else if (isCanceled(st.value)) {
           try { await updateOrder(rec.orderId, { paymentStatus: CANCEL_STATUS, fulfillmentStatus: CANCEL_FULFILLMENT_STATUS }); }

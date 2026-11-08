@@ -242,19 +242,21 @@ Last month is refreshed during the first 3 days of a new month.
 | `META_ADS_TOKEN` | — | Meta System User token with `ads_read` |
 | `META_AD_ACCOUNT_ID` | `942487855007284` | Ad account number (no `act_`) |
 
-## QP delivered → Ecwid Delivered + Paid
+## QP outcome → Ecwid order
 
-Every 10 minutes (`src/qp_ecwid.js`), each QP order that became Delivered
-(from `QP_ECWID_START`, default 2026-11-01) is matched to its Ecwid order by
-the customer's phone (last 10 digits), placed up to 14 days before, not
-cancelled and not already delivered; with several candidates the total
-closest to what QP collected wins (within 400 EGP). The Ecwid order is set to
-`DELIVERED` + `PAID`. Unmatched ones are sent to the merchant on WhatsApp to
-mark by hand. Bosta deliveries now also set `PAID` with `DELIVERED`.
+Every 10 minutes (`src/qp_ecwid.js`), each finished QP order (from
+`QP_ECWID_START`, default 2026-11-01) is matched to Ecwid by the customer's
+phone only (last 10 digits: +20 / 0 / spaces don't matter). Every open Ecwid
+order on that phone placed up to 14 days before the QP shipment gets:
+- QP Delivered → `DELIVERED` + `PAID`
+- QP refused / cancelled / returned → `RETURNED` + `CANCELLED`, stock put back
+
+Unmatched ones go to the merchant on WhatsApp. Bosta does the same:
+delivered → `DELIVERED` + `PAID`, returned → `RETURNED` + `CANCELLED`.
 
 - `/dashboard/qp-ecwid/run?dry=1` — show matches without changing Ecwid
 - `/dashboard/qp-ecwid/run` — run now; `/dashboard/qp-ecwid/status` — last run
-- `QP_ECWID_SYNC=false` turns it off; `PAID_PAYMENT_STATUS` (default `PAID`)
+- `QP_ECWID_SYNC=false` turns it off
 
 ## Configuration reference
 
