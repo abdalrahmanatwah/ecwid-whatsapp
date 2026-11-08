@@ -63,7 +63,7 @@ function parseMonth(title, key, rows) {
   const orders = rows
     .slice(header + 1, total)
     .filter((r) => cell(r, 2))
-    .map((r) => cols.slice(0, 16).map((_, i) => cell(r, i)));
+    .map((r) => Array.from({ length: 17 }, (_, i) => cell(r, i)));
   const summary = [];
   const supplier = [];
   let inSupplier = false;
@@ -230,6 +230,21 @@ details .inner{margin-top:12px}
 .err{background:var(--bad-soft);color:var(--bad);padding:14px;border-radius:12px}
 .skeleton{height:120px;border-radius:16px;background:linear-gradient(90deg,var(--line),var(--panel),var(--line));background-size:200% 100%;animation:sh 1.2s infinite}
 @keyframes sh{to{background-position:-200% 0}}
+tr.fresh td{animation:freshrow 2.4s ease-out 3}
+@keyframes freshrow{0%{background:color-mix(in srgb,var(--good) 35%,transparent)}100%{background:transparent}}
+.badge-new{display:inline-block;margin-inline-start:6px;padding:1px 7px;border-radius:999px;background:var(--good);color:var(--bg);font-size:11px;font-weight:600;vertical-align:1px}
+.toasts{position:fixed;inset-inline:0;bottom:18px;display:flex;flex-direction:column;align-items:center;gap:10px;z-index:50;pointer-events:none;padding:0 16px}
+.toast{pointer-events:auto;display:flex;align-items:center;gap:14px;max-width:520px;width:100%;background:var(--panel);border:1px solid var(--line);border-inline-start:5px solid var(--good);border-radius:16px;padding:14px 16px;box-shadow:0 18px 40px -18px rgba(0,0,0,.45);animation:toastin .6s cubic-bezier(.2,1.4,.4,1) both}
+.toast.out{animation:toastout .4s ease-in forwards}
+.toast .ico{font-size:30px;animation:bounce 1s ease-in-out 3}
+.toast .t1{font-weight:700;font-size:15px}
+.toast .t2{color:var(--muted);font-size:13px;margin-top:2px}
+.toast .amt{margin-inline-start:auto;font-size:20px;font-weight:700;color:var(--good)}
+@keyframes toastin{from{opacity:0;transform:translateY(40px) scale(.9)}to{opacity:1;transform:none}}
+@keyframes toastout{to{opacity:0;transform:translateY(30px)}}
+@keyframes bounce{0%,100%{transform:translateY(0)}40%{transform:translateY(-8px) rotate(-8deg)}70%{transform:translateY(0) rotate(6deg)}}
+#confetti{position:fixed;inset:0;pointer-events:none;z-index:40}
+@media (prefers-reduced-motion: reduce){.toast,.toast .ico,tr.fresh td{animation:none!important}}
 @media (max-width:900px){.hero,.grid2{grid-template-columns:1fr}.kpis{grid-template-columns:repeat(2,1fr)}.big .value{font-size:36px}}
 @media (max-width:420px){.kpi .value{font-size:20px}}
 </style>
@@ -243,6 +258,8 @@ details .inner{margin-top:12px}
   <nav class="months" id="months"></nav>
   <main id="app"><div class="skeleton"></div></main>
 </div>
+<canvas id="confetti" aria-hidden="true"></canvas>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 <script>
 (() => {
 const $ = (s, el = document) => el.querySelector(s);
@@ -272,6 +289,65 @@ $('#theme').onclick = () => {
 };
 
 let DATA = null, current = null;
+const FRESH = new Set(); // shipment ids that arrived since the last look
+
+// New delivered orders since this browser last looked → celebration.
+// The first visit only remembers what's there (no celebration for old orders).
+function detectNew() {
+  const all = [];
+  for (const m of DATA.months) m.orders.forEach((r) => { const id = r[16] || (m.key + '|' + r.slice(0, 6).join('|')); all.push({ id, r, m }); });
+  let seen = null;
+  try { seen = JSON.parse(localStorage.getItem('499k-seen') || 'null'); } catch {}
+  const known = new Set(seen || []);
+  const fresh = seen ? all.filter((x) => !known.has(x.id)) : [];
+  try { localStorage.setItem('499k-seen', JSON.stringify(all.map((x) => x.id))); } catch {}
+  if (!fresh.length) return;
+  for (const x of fresh) FRESH.add(x.id);
+  current = fresh[fresh.length - 1].m.key; // jump to the month of the newest one
+  celebrate(fresh);
+}
+
+function celebrate(list) {
+  const box = $('#toasts');
+  const show = list.slice(-3).reverse();
+  show.forEach((x, i) => setTimeout(() => {
+    const t = h('div', { class: 'toast' },
+      h('div', { class: 'ico' }, '🎉'),
+      h('div', {}, h('div', { class: 't1' }, 'أوردر اتسلّم!'), h('div', { class: 't2' }, (x.r[1] || '') + ' · ' + (x.r[2] || '').slice(0, 60))),
+      h('div', { class: 'amt num' }, '+' + (x.r[5] || '')));
+    box.append(t);
+    setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 450); }, 6500);
+  }, i * 900));
+  if (list.length > 3) {
+    const t = h('div', { class: 'toast' }, h('div', { class: 'ico' }, '📦'), h('div', {}, h('div', { class: 't1' }, 'و ' + (list.length - 3) + ' أوردر كمان اتسلّموا')));
+    setTimeout(() => { box.append(t); setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 450); }, 6500); }, 3 * 900);
+  }
+  confetti();
+}
+
+function confetti() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const c = $('#confetti'), ctx = c.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  c.width = innerWidth * dpr; c.height = innerHeight * dpr; ctx.scale(dpr, dpr);
+  const css = getComputedStyle(document.documentElement);
+  const colors = ['--c1', '--c2', '--c3', '--c4'].map((v) => css.getPropertyValue(v).trim());
+  const parts = Array.from({ length: 160 }, () => ({
+    x: innerWidth / 2 + (Math.random() - .5) * 120, y: innerHeight * .75,
+    vx: (Math.random() - .5) * 14, vy: -Math.random() * 16 - 8,
+    s: Math.random() * 7 + 4, r: Math.random() * 6, vr: (Math.random() - .5) * .4,
+    col: colors[Math.floor(Math.random() * colors.length)],
+  }));
+  const t0 = performance.now();
+  (function frame(t) {
+    ctx.clearRect(0, 0, innerWidth, innerHeight);
+    for (const p of parts) {
+      p.vy += .45; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.fillStyle = p.col; ctx.fillRect(-p.s / 2, -p.s / 4, p.s, p.s / 2); ctx.restore();
+    }
+    if (t - t0 < 3200) requestAnimationFrame(frame); else ctx.clearRect(0, 0, innerWidth, innerHeight);
+  })(t0);
+}
 
 async function load() {
   $('#updated').textContent = 'بيحمّل…';
@@ -279,6 +355,7 @@ async function load() {
     const r = await fetch(location.pathname.replace(/\/$/, '') + '/data.json', { cache: 'no-store' });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'HTTP ' + r.status);
     DATA = await r.json();
+    detectNew();
     if (!current || !DATA.months.some((m) => m.key === current)) current = DATA.months[0]?.key;
     $('#updated').textContent = 'آخر تحديث ' + new Date(DATA.updatedAt).toLocaleTimeString('ar-EG', { hour: 'numeric', minute: '2-digit' });
     render();
@@ -395,14 +472,18 @@ function ordersTable(m) {
   const show = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   const numeric = new Set([4, 5, 6, 7, 8, 9]);
   let q = '', carrier = '', sortCol = null, dir = 1;
+  // Default order: newest first — by date (dd/MM), then later rows first.
+  const dayKey = (r, i) => { const [d, mo] = String(r[0]).split('/').map(Number); return ((mo || 0) * 100 + (d || 0)) * 10000 + i; };
+  const indexed = m.orders.map((r, i) => ({ r, k: dayKey(r, i) }));
   const tbody = h('tbody'), count = h('small');
   const carriers = [...new Set(m.orders.map((r) => r[1]).filter(Boolean))];
   const draw = () => {
-    let rows = m.orders.filter((r) => (!carrier || r[1] === carrier) && (!q || r.join(' ').toLowerCase().includes(q)));
+    let rows = [...indexed].sort((a, b) => b.k - a.k).map((x) => x.r)
+      .filter((r) => (!carrier || r[1] === carrier) && (!q || r.join(' ').toLowerCase().includes(q)));
     if (sortCol != null) rows = [...rows].sort((a, b) => (numeric.has(sortCol) ? num(a[sortCol]) - num(b[sortCol]) : String(a[sortCol]).localeCompare(String(b[sortCol]), 'ar')) * dir);
-    tbody.replaceChildren(...rows.map((r) => h('tr', {}, show.map((i) => {
+    tbody.replaceChildren(...rows.map((r) => h('tr', { class: FRESH.has(r[16]) ? 'fresh' : '' }, show.map((i) => {
       if (i === 1) return h('td', {}, h('span', { class: 'pill ' + carrierClass(r[1]) }, r[1]));
-      if (i === 2) return h('td', { class: 'shoe' }, r[2]);
+      if (i === 2) return h('td', { class: 'shoe' }, r[2], FRESH.has(r[16]) ? h('span', { class: 'badge-new' }, 'جديد') : null);
       if (i === 10) return h('td', { class: 'note' }, r[10]);
       if (numeric.has(i)) return h('td', {}, money(r[i]));
       return h('td', { class: i === 0 ? 'num' : '' }, r[i]);
@@ -457,7 +538,7 @@ function renderAll() {
 }
 
 load();
-setInterval(load, 5 * 60 * 1000);
+setInterval(load, 60 * 1000);
 })();
 </script>
 </body>
