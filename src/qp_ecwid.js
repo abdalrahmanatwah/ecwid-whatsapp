@@ -1,13 +1,15 @@
 // QP delivered → Ecwid order marked Delivered + Paid.
 //
 // QP orders aren't linked to Ecwid orders (no tracking number on the Ecwid
-// order), so each delivered QP order is matched to its Ecwid order by the
-// customer's phone number, then the price:
+// order), so each delivered QP order is matched to its Ecwid order(s) by the
+// customer's phone number, then the price or the products:
 //   - same phone (last 10 digits, so +20 / 0 prefixes don't matter),
 //   - Ecwid order placed up to QP_ECWID_LOOKBACK_DAYS before the QP order,
 //   - not cancelled and not already delivered,
-//   - if several match, the one whose total is closest to what QP collected
-//     (within QP_ECWID_MAX_PRICE_GAP); otherwise it's left for the merchant.
+//   - the order, or orders shipped together, whose totals add up to what QP
+//     collected (within QP_ECWID_MAX_PRICE_GAP); or else the orders whose
+//     products all appear in the QP shipment's contents; otherwise it's left
+//     for the merchant.
 // Every QP order is handled once (remembered in /var/data/qp_ecwid.json).
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
@@ -102,12 +104,41 @@ export function matchOrder(qp, ecwidOrders) {
   }
 
   const collected = Number(qp.total_amount) || 0;
-  const ranked = open
-    .map((o) => ({ o, gap: Math.abs((Number(o.total) || 0) - collected) }))
-    .sort((a, b) => a.gap - b.gap);
-  if (ranked.length === 1 && (collected <= 0 || ranked[0].gap <= MAX_PRICE_GAP)) return { order: ranked[0].o };
-  if (ranked[0].gap <= MAX_PRICE_GAP && (ranked.length === 1 || ranked[1].gap > ranked[0].gap)) return { order: ranked[0].o };
-  return { reason: `${ranked.length} Ecwid orders with this phone, none clearly matches ${collected} EGP` };
+  const contents = normalizeText(qp.shipment_contents);
+
+  // 1) The order — or several orders shipped together in one QP shipment —
+  //    whose total adds up to what QP collected.
+  const combos = [];
+  const n = Math.min(open.length, 6);
+  for (let mask = 1; mask < 1 << n; mask++) {
+    const set = open.slice(0, n).filter((_, i) => mask & (1 << i));
+    const sum = set.reduce((t, o) => t + (Number(o.total) || 0), 0);
+    combos.push({ set, gap: Math.abs(sum - collected) });
+  }
+  combos.sort((a, b) => a.gap - b.gap || a.set.length - b.set.length);
+  const best = combos[0];
+  if (collected > 0 && best && best.gap <= MAX_PRICE_GAP) {
+    const rival = combos.find((c) => c !== best && c.gap === best.gap && c.set.length === best.set.length);
+    if (!rival) return { orders: best.set };
+  }
+
+  // 2) Orders whose products all appear in the QP shipment's contents (e.g. a
+  //    pair added on WhatsApp outside Ecwid, so the totals don't add up).
+  if (contents) {
+    const byProducts = open.filter((o) => {
+      const names = (o.items || []).map((it) => normalizeText(it.name)).filter(Boolean);
+      return names.length > 0 && names.every((name) => contents.includes(name));
+    });
+    if (byProducts.length) return { orders: byProducts };
+  }
+
+  if (open.length === 1 && collected <= 0) return { orders: open };
+  return { reason: `${open.length} Ecwid order(s) with this phone, totals and products don't match ${collected} EGP` };
+}
+
+// Lower-case, single spaces, no punctuation — for comparing product names.
+function normalizeText(t) {
+  return String(t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
 }
 
 let running = false;
@@ -136,21 +167,22 @@ export async function runQpEcwidSync({ force = false, dryRun = false } = {}) {
       for (const qp of todo) {
         const serial = String(qp.serial);
         const m = matchOrder(qp, ecwidOrders);
-        if (m.order) {
-          const id = String(m.order.id ?? m.order.orderNumber);
-          const label = m.order.orderNumber || id;
+        if (m.orders) {
+          const ids = m.orders.map((o) => String(o.id ?? o.orderNumber));
           if (!dryRun) {
             try {
-              await updateOrder(id, { fulfillmentStatus: DELIVERED_STATUS, paymentStatus: PAID_STATUS });
-              m.order.fulfillmentStatus = DELIVERED_STATUS; // don't match it again this run
-              if (store.has(id)) store.upsert(id, { status: 'delivered', deliveredVia: 'qp', qpSerial: serial });
-              state.handled[serial] = { ecwid: id, at: result.at };
+              for (const [i, o] of m.orders.entries()) {
+                await updateOrder(ids[i], { fulfillmentStatus: DELIVERED_STATUS, paymentStatus: PAID_STATUS });
+                o.fulfillmentStatus = DELIVERED_STATUS; // don't match it again this run
+                if (store.has(ids[i])) store.upsert(ids[i], { status: 'delivered', deliveredVia: 'qp', qpSerial: serial });
+              }
+              state.handled[serial] = { ecwid: ids, at: result.at };
             } catch (e) {
               result.unmatched.push({ serial, reason: `Ecwid update failed: ${e.message}` });
               continue;
             }
           }
-          result.marked.push({ serial, ecwid: label, total: m.order.total, collected: qp.total_amount });
+          result.marked.push({ serial, ecwid: m.orders.map((o) => o.orderNumber || o.id), totals: m.orders.map((o) => o.total), collected: qp.total_amount });
         } else if (m.alreadyDelivered) {
           if (!dryRun) state.handled[serial] = { ecwid: String(m.alreadyDelivered.id), already: true, at: result.at };
           result.alreadyDelivered.push({ serial, ecwid: m.alreadyDelivered.orderNumber || m.alreadyDelivered.id });
@@ -172,7 +204,7 @@ export async function runQpEcwidSync({ force = false, dryRun = false } = {}) {
 
     if (!dryRun && (result.marked.length || result.unmatched.length)) {
       const lines = [];
-      if (result.marked.length) lines.push(`✅ اتعلّم Delivered + Paid على Ecwid: ${result.marked.map((x) => `#${x.ecwid}`).join('، ')}`);
+      if (result.marked.length) lines.push(`✅ اتعلّم Delivered + Paid على Ecwid: ${result.marked.flatMap((x) => x.ecwid.map((e) => `#${e}`)).join('، ')}`);
       const fresh = result.unmatched.filter((u) => !state.lastNotified?.[u.serial]);
       if (fresh.length) {
         lines.push(`⚠️ أوردرات QP اتسلّمت ومش لاقي أوردرها على Ecwid (علّمها بإيدك): ${fresh.map((u) => `${u.serial} (${u.amount} ج)`).join('، ')}`);
