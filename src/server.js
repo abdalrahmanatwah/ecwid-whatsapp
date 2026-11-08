@@ -13,6 +13,7 @@ import * as qpOrders from './qp_orders.js';
 import { handleCartButton } from './abandoned_carts.js';
 import { socialProofRouter } from './social_proof.js';
 import { sheetSyncRouter } from './sheet_sync.js';
+import { qpEcwidRouter } from './qp_ecwid.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -55,7 +56,8 @@ app.get('/', (_req, res) => res.send('Ecwid → WhatsApp order confirmation: run
  * Dashboard: Bosta delivery rate, earnings, undelivered orders, etc.  *
  * Both the page and its API are behind Basic Auth (DASHBOARD_PASSWORD)*
  * ------------------------------------------------------------------ */
-app.use('/dashboard/sheet-sync', requireAuth, sheetSyncRouter); // sales-sheet sync status / run / Bosta probe
+app.use('/dashboard/sheet-sync', requireAuth, sheetSyncRouter);
+app.use('/dashboard/qp-ecwid', requireAuth, qpEcwidRouter); // QP delivered → Ecwid Delivered + Paid
 app.use('/dashboard', requireAuth, dashboardRouter);
 app.get('/dashboard', requireAuth, (_req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'dashboard.html'));

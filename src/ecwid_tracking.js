@@ -47,6 +47,8 @@ const STATUS_MAX_DAYS = Number(process.env.FOLLOWUP_MAX_DAYS || 21); // stop pol
 const DELIVERED_STATUS = process.env.DELIVERED_FULFILLMENT_STATUS || 'DELIVERED';
 const RETURNED_STATUS = process.env.RETURNED_FULFILLMENT_STATUS || 'RETURNED';
 const CANCEL_STATUS = process.env.CANCEL_PAYMENT_STATUS || 'CANCELLED';
+// Delivered cash-on-delivery orders are paid: set together with Delivered.
+const PAID_STATUS = process.env.PAID_PAYMENT_STATUS || 'PAID';
 const CANCEL_FULFILLMENT_STATUS = process.env.CANCEL_FULFILLMENT_STATUS || 'WILL_NOT_DELIVER';
 
 // How often to send the "orders still waiting for a tracking number" digest,
@@ -315,11 +317,11 @@ export async function trackFromEcwid() {
 
         const customer = rec.repliedBy || rec.to;
         if (isDelivered(st.value)) {
-          try { await updateOrder(rec.orderId, { fulfillmentStatus: DELIVERED_STATUS }); }
+          try { await updateOrder(rec.orderId, { fulfillmentStatus: DELIVERED_STATUS, paymentStatus: PAID_STATUS }); }
           catch (e) { console.warn(`[track] couldn't set Ecwid ${DELIVERED_STATUS} for ${rec.orderId}:`, e.message); }
           const offerSent = await trySend(customer, DELIVERED_TEMPLATE, LANG, rec.orderId);
           store.upsert(rec.orderId, { status: 'delivered' });
-          await notifyMerchant(`📦 Order ${rec.orderId} DELIVERED — marked Delivered on Ecwid${offerSent ? ' and sent the 100 EGP offer.' : ' but the 100 EGP offer was NOT sent (see logs).'}`);
+          await notifyMerchant(`📦 Order ${rec.orderId} DELIVERED — marked Delivered + Paid on Ecwid${offerSent ? ' and sent the 100 EGP offer.' : ' but the 100 EGP offer was NOT sent (see logs).'}`);
           console.log(`[track] order ${rec.orderId} delivered — Ecwid updated${offerSent ? ' + offer sent' : ', offer NOT sent'}`);
         } else if (isReturned(st.value)) {
           const askNow = REJECTED_TEMPLATE && customer && !rec.exceptionNotified;

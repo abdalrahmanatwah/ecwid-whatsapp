@@ -16,6 +16,7 @@ import { checkAbandonedCarts, hasRecentCartConfirm } from './abandoned_carts.js'
 import { autoShipOrder } from './auto_ship.js';
 import { notifyMerchant } from './notify.js';
 import { maybeRunSheetSync } from './sheet_sync.js';
+import { maybeRunQpEcwidSync } from './qp_ecwid.js';
 
 const COUNTRY = process.env.DEFAULT_COUNTRY_CODE || '20';
 const OVERLAP_SEC = 120;            // re-scan a little into the past when discovering new orders
@@ -170,7 +171,14 @@ async function pollOnce() {
     console.error('[poll] abandoned carts step failed:', err.message);
   }
 
-  // 6) Sales sheet: delivered Bosta/QP orders → Google Sheet (self-throttled, hourly).
+  // 6) QP delivered → Ecwid order Delivered + Paid (self-throttled, every 10 min).
+  try {
+    await maybeRunQpEcwidSync();
+  } catch (err) {
+    console.error('[poll] QP → Ecwid step failed:', err.message);
+  }
+
+  // 7) Sales sheet: delivered Bosta/QP orders → Google Sheet (self-throttled, hourly).
   try {
     await maybeRunSheetSync();
   } catch (err) {
