@@ -114,10 +114,11 @@ async function buildData() {
   }
   months.sort((a, b) => b.key.localeCompare(a.key));
   const has = (name) => tabs.some((t) => t.title === name);
-  const [returns, review, assumptions] = await Promise.all([
+  const [returns, review, assumptions, purchases] = await Promise.all([
     has('المرتجعات') ? sheets.getValues(SHEET_ID, `'المرتجعات'!A1:H200`) : [],
     has('مراجعة') ? sheets.getValues(SHEET_ID, `'مراجعة'!A1:H500`) : [],
     has('الافتراضات') ? sheets.getValues(SHEET_ID, `'الافتراضات'!A1:G200`) : [],
+    has('المشتريات') ? sheets.getValues(SHEET_ID, `'المشتريات'!A5:K300`) : [],
   ]);
   const data = {
     updatedAt: new Date().toISOString(),
@@ -125,6 +126,8 @@ async function buildData() {
     returns,
     review,
     assumptions: assumptions.slice(2).map((r) => [cell(r, 0), cell(r, 1), cell(r, 2)]).filter((r) => r[0] && r[1]),
+    // date, model, price, qty, invoice total, sold, recovered, left, stock value, % back, last sale
+    purchases: purchases.map((r) => Array.from({ length: 11 }, (_, i) => cell(r, i))).filter((r) => r[1] && r[3]),
     prices: assumptions.slice(3).map((r) => [cell(r, 4), cell(r, 5), cell(r, 6)]).filter((r) => r[0] && /\d/.test(r[1])),
   };
   cache = { at: Date.now(), data };
@@ -375,7 +378,7 @@ async function load() {
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'HTTP ' + r.status);
     DATA = await r.json();
     detectNew();
-    if (!current || !DATA.months.some((m) => m.key === current)) current = DATA.months[0]?.key;
+    if (!current || (!current.startsWith('__') && !DATA.months.some((m) => m.key === current))) current = DATA.months[0]?.key;
     $('#updated').textContent = 'آخر تحديث ' + new Date(DATA.updatedAt).toLocaleTimeString('ar-EG', { hour: 'numeric', minute: '2-digit' });
     render();
   } catch (e) {
@@ -388,9 +391,11 @@ $('#refresh').onclick = load;
 function render() {
   const nav = $('#months');
   nav.replaceChildren(...DATA.months.map((m) => h('button', { class: 'chip', 'aria-pressed': String(m.key === current), onclick: () => { current = m.key; render(); } }, m.title)),
-    h('button', { class: 'chip', 'aria-pressed': String(current === '__all'), onclick: () => { current = '__all'; render(); } }, 'كل الشهور'));
+    h('button', { class: 'chip', 'aria-pressed': String(current === '__all'), onclick: () => { current = '__all'; render(); } }, 'كل الشهور'),
+    ...(DATA.purchases?.length ? [h('button', { class: 'chip', 'aria-pressed': String(current === '__buy'), onclick: () => { current = '__buy'; render(); } }, 'المشتريات')] : []));
   const app = $('#app');
   if (current === '__all') return app.replaceChildren(...renderAll());
+  if (current === '__buy') return app.replaceChildren(...renderPurchases());
   const m = DATA.months.find((x) => x.key === current);
   if (!m) return app.replaceChildren(h('div', { class: 'empty' }, 'مفيش بيانات'));
   app.replaceChildren(...renderMonth(m));
@@ -536,6 +541,40 @@ function simpleTable(rows, opts = {}) {
       if (opts.dateCol === i && /^\d{5}$/.test(v)) { const d = new Date(Date.UTC(1899, 11, 30) + Number(v) * 864e5); return h('td', { class: 'num' }, d.toISOString().slice(8, 10) + '/' + d.toISOString().slice(5, 7)); }
       return h('td', { class: /^[\d,.()%\-\s]+$/.test(v) && v ? 'num' : '' }, v);
     }))))));
+}
+
+// Stock bought up front: how much of the money has come back.
+function renderPurchases() {
+  const P = DATA.purchases || [];
+  const t = { cost: 0, qty: 0, sold: 0, back: 0, left: 0, stock: 0 };
+  for (const r of P) { t.cost += num(r[4]); t.qty += num(r[3]); t.sold += num(r[5]); t.back += num(r[6]); t.left += num(r[7]); t.stock += num(r[8]); }
+  const pct = t.cost ? Math.round(t.back / t.cost * 100) : 0;
+  const kpi = (label, v, sub) => h('div', { class: 'card kpi' }, h('div', { class: 'label' }, label), h('div', { class: 'value num' }, v), sub ? h('div', { class: 'hint' }, sub) : null);
+  const out = [];
+  out.push(h('section', { class: 'hero', style: 'grid-template-columns:1fr' }, h('div', { class: 'card big profit' },
+    h('div', { class: 'label' }, 'فلوس البضاعة اللي رجعتلك'),
+    h('div', { class: 'value num' }, fmt(t.back), h('span', { style: 'font-size:.45em;color:var(--muted)' }, ' من ' + fmt(t.cost))),
+    h('div', { class: 'track', style: 'height:14px;background:var(--line);border-radius:999px;overflow:hidden;margin:12px 0 6px' },
+      h('div', { style: 'height:100%;width:' + pct + '%;background:var(--good);border-radius:999px' })),
+    h('div', { class: 'sub' }, h('b', { class: 'num' }, pct + '%'), ' رجع · الباقي ', h('b', { class: 'num' }, fmt(t.stock)), ' جنيه لسه بضاعة في المخزن'))));
+  out.push(h('section', { class: 'kpis' },
+    kpi('إجمالي الفواتير', fmt(t.cost), fmt(t.qty) + ' زوج'),
+    kpi('اتباع', fmt(t.sold), 'زوج'),
+    kpi('فاضل في المخزن', fmt(t.left), 'زوج'),
+    kpi('قيمة المخزون', fmt(t.stock), 'جنيه')));
+  // Per model: share of its pairs sold.
+  out.push(h('section', { class: 'card', style: 'margin-bottom:14px' }, h('h2', {}, 'كل موديل رجع منه كام'),
+    h('div', { class: 'bars' }, P.map((r) => {
+      const q = num(r[3]), sold = Math.min(num(r[5]), q), p = q ? sold / q * 100 : 0;
+      return h('div', { class: 'bar' },
+        h('div', { class: 'row', style: 'flex-wrap:wrap;gap:2px 12px' }, h('b', {}, r[1].split('|')[0].trim()),
+          h('span', {}, h('b', { class: 'num' }, fmt(sold)), ' من ', h('span', { class: 'num' }, fmt(q)), ' زوج · رجع ', h('b', { class: 'num' }, r[6] || '0'), h('span', { style: 'color:var(--muted)' }, ' · فاضل ', h('span', { class: 'num' }, r[8] || '0')))),
+        h('div', { class: 'track' }, h('div', { class: 'fill', style: 'width:' + p + '%;background:' + (p >= 80 ? 'var(--good)' : p >= 40 ? 'var(--accent)' : 'var(--bad)') })));
+    }))));
+  const head = ['تاريخ الشراء', 'الموديل', 'سعر القطعة', 'العدد', 'الفاتورة', 'اتباع', 'رجعلك', 'فاضل', 'قيمة المخزون', 'نسبة اللي رجع', 'آخر بيعة'];
+  out.push(h('section', { class: 'card' }, h('h2', {}, 'الفواتير'),
+    simpleTable([head, ...P.map((r) => [r[0], r[1].split('|')[0].trim(), ...r.slice(2)]), ['', 'الإجمالي', '', fmt(t.qty), fmt(t.cost), fmt(t.sold), fmt(t.back), fmt(t.left), fmt(t.stock), pct + '%', '']], { min: 900 })));
+  return out;
 }
 
 function renderAll() {
