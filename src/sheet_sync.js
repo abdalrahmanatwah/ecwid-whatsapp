@@ -28,6 +28,7 @@ import { metaAdsConfigured, monthSpend } from './meta_ads.js';
 import {
   normalizeBosta, normalizeQp, classify, saleRowValues, reviewRowValues, monthKey, bostaFee, bostaCustomerPaid, returnCost,
 } from './sales_rows.js';
+import { PURCHASES_TAB, FIRST_ROW as P_FIRST, parseDate, serialToDate, allocate, rowFormulas } from './purchases.js';
 
 const SHEET_ID = process.env.SALES_SHEET_ID || '';
 const ENABLED = String(process.env.SHEET_SYNC ?? 'true').toLowerCase() !== 'false';
@@ -429,6 +430,51 @@ async function syncAdSpend(tabs, dryRun) {
   return out;
 }
 
+// Stock bought up front: count pairs sold since each purchase (see purchases.js).
+async function syncPurchases(tabs, dryRun) {
+  if (!tabs.some((t) => t.title === PURCHASES_TAB)) return { skipped: `no "${PURCHASES_TAB}" tab` };
+  const year = Number(cairoToday().slice(0, 4));
+  const rows = await sheets.getFormulas(SHEET_ID, `${q(PURCHASES_TAB)}!A${P_FIRST}:K500`);
+  const purchases = rows
+    .map((r, i) => ({ row: P_FIRST + i, date: parseDate(r?.[0], year), key: String(r?.[1] || '').trim(), price: Number(r?.[2]) || 0, qty: Number(r?.[3]) || 0, raw: r || [] }))
+    .filter((p) => p.key && p.qty > 0);
+  if (!purchases.length) return { purchases: 0 };
+  const from = purchases.map((p) => p.date).filter(Boolean).sort()[0];
+  if (!from) return { purchases: purchases.length, skipped: 'no purchase date' };
+
+  const sales = [];
+  for (const { tab, key } of monthTabsOf(tabs)) {
+    if (key < from.slice(0, 7)) continue;
+    const { total } = await readLayout(tab.title);
+    if (total <= FIRST_DATA_ROW) continue;
+    const data = await sheets.getFormulas(SHEET_ID, `${q(tab.title)}!A${FIRST_DATA_ROW}:P${total - 1}`);
+    for (const r of data) {
+      if (typeof r?.[0] !== 'number' || !r[2]) continue;
+      sales.push({ date: serialToDate(r[0]), name: String(r[2]), pairs: (r.slice(11, 16)) });
+    }
+  }
+  const result = allocate(purchases, sales);
+  const writes = [];
+  for (const p of purchases) {
+    const { sold, last } = result[p.row];
+    const f = rowFormulas(p.row);
+    const lastNow = typeof p.raw[10] === 'number' ? serialToDate(p.raw[10]) : String(p.raw[10] || '');
+    if (p.raw[5] !== sold || lastNow !== (last || '')) {
+      writes.push({ range: `${q(PURCHASES_TAB)}!F${p.row}`, values: [[sold]] });
+      writes.push({ range: `${q(PURCHASES_TAB)}!K${p.row}`, values: [[last || '']] });
+    }
+    if (p.raw[4] !== f.E) writes.push({ range: `${q(PURCHASES_TAB)}!E${p.row}`, values: [[f.E]] });
+    if (p.raw[6] !== f.G) writes.push({ range: `${q(PURCHASES_TAB)}!G${p.row}:J${p.row}`, values: [[f.G, f.H, f.I, f.J]] });
+  }
+  if (!dryRun) for (const w of writes) await sheets.updateValues(SHEET_ID, w.range, w.values);
+  return {
+    purchases: purchases.length,
+    salesScanned: sales.length,
+    sold: Object.fromEntries(purchases.map((p) => [`${p.key} (${p.date})`, `${result[p.row].sold}/${p.qty}`])),
+    cellsWritten: dryRun ? 0 : writes.length,
+  };
+}
+
 // ---- main ---------------------------------------------------------------------------
 
 let running = false;
@@ -553,6 +599,15 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
       console.warn('[sheet] ad spend sync failed:', e.message);
     }
 
+    // Stock bought up front: how much of it has sold (never blocks the rest).
+    let purchases;
+    try {
+      purchases = await syncPurchases(await sheets.getTabs(SHEET_ID), dryRun);
+    } catch (e) {
+      purchases = { error: e.message };
+      console.warn('[sheet] purchases sync failed:', e.message);
+    }
+
     const result = {
       at: new Date().toISOString(),
       dryRun,
@@ -570,6 +625,7 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
       bostaFeeReads: feeReads,
       feeBackfill,
       adSpend,
+      purchases,
     };
     state.lastRunAt = result.at;
     state.lastResult = result;
