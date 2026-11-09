@@ -435,7 +435,7 @@ async function syncPurchases(tabs, dryRun) {
   if (!tabs.some((t) => t.title === PURCHASES_TAB)) return { skipped: `no "${PURCHASES_TAB}" tab` };
   const today = cairoToday();
   const year = Number(today.slice(0, 4));
-  const rows = await sheets.getFormulas(SHEET_ID, `${q(PURCHASES_TAB)}!A${P_FIRST}:O500`);
+  const rows = await sheets.getFormulas(SHEET_ID, `${q(PURCHASES_TAB)}!A${P_FIRST}:P500`);
   const purchases = rows
     .map((r, i) => ({ row: P_FIRST + i, date: parseDate(r?.[0], year), key: String(r?.[1] || '').trim(), price: Number(r?.[2]) || 0, qty: Number(r?.[3]) || 0, raw: r || [] }))
     .filter((p) => p.key && p.qty > 0);
@@ -461,7 +461,10 @@ async function syncPurchases(tabs, dryRun) {
   const cycleRows = [];
   const summary = {};
   for (const p of purchases) {
-    const { sold, last, units } = result[p.row];
+    const { last, units } = result[p.row];
+    // Column P: pairs sold as counted by hand — wins over the automatic count.
+    const manual = typeof p.raw[15] === 'number' ? p.raw[15] : null;
+    const sold = manual ?? result[p.row].sold;
     const f = rowFormulas(p.row);
     const cash = p.date ? cashCycles(p, units, today, CYCLE_MONTHS) : { collected: 0, paidBackOn: null, cycles: [] };
     const asDate = (v) => (typeof v === 'number' ? serialToDate(v) : String(v || ''));
@@ -479,7 +482,7 @@ async function syncPurchases(tabs, dryRun) {
     const name = p.key.split('|')[0].trim();
     const dmy = (d) => `'${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
     for (const c of cash.cycles) cycleRows.push([name, dmy(p.date), c.n, dmy(c.from), dmy(c.to), c.sold, c.collected, c.cum, c.recovered, c.left, c.profit]);
-    summary[`${name} (${p.date})`] = { sold: `${sold}/${p.qty}`, collected: cash.collected, cost: p.price * p.qty, paidBackOn: cash.paidBackOn };
+    summary[`${name} (${p.date})`] = { sold: `${sold}/${p.qty}`, matched: result[p.row].sold, manual, collected: cash.collected, cost: p.price * p.qty, paidBackOn: cash.paidBackOn };
   }
 
   if (!dryRun) {
