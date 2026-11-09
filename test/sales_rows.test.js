@@ -168,3 +168,21 @@ test('Bosta sale row uses the actual fee when known, the estimate cell otherwise
   const unknown = classify(bosta(), PRICES);
   assert.equal(saleRowValues(unknown, 9)[6], "='الافتراضات'!$B$9");
 });
+
+test('an Ecwid order delivered by a private courier becomes a sale row', async () => {
+  const { privateSale } = await import('../src/sales_rows.js');
+  const order = { orderNumber: 'LJUHG', total: 3950, items: [
+    { name: 'ASICS COURT FF 3 - WHITE BLACK', quantity: 1, selectedOptions: [{ name: 'Size', value: '44' }] },
+    { name: 'Comfort Foam Insoles', quantity: 1 },
+  ] };
+  const c = privateSale(order, [], '2026-11-09');
+  assert.equal(c.action, 'sale');
+  assert.equal(c.id, 'ecwid:LJUHG');
+  assert.equal(c.brand, 'ASICS');
+  assert.equal(c.insoles, 1);
+  assert.equal(c.amount, 3950);
+  assert.match(c.note, /مندوب خاص/);
+  const row = saleRowValues(c, 30);
+  assert.equal(row[1], 'مندوب خاص');
+  assert.equal(row[6], 0);
+});
