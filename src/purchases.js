@@ -82,6 +82,19 @@ export function allocate(purchases, sales) {
   return out;
 }
 
+// When the owner counted the pairs sold by hand, bring the matched sales in
+// line with it: drop the latest ones if there are fewer, or add the missing
+// pairs at the average money per matched pair (dated at the last known sale)
+// if there are more.
+export function adjustUnits(units, manual, today) {
+  if (manual == null || manual === units.length) return units;
+  const sorted = [...units].sort((a, b) => a.date.localeCompare(b.date));
+  if (manual < sorted.length) return sorted.slice(0, Math.max(0, manual));
+  const avg = sorted.length ? sorted.reduce((a, u) => a + u.revenue, 0) / sorted.length : 0;
+  const date = sorted.length ? sorted[sorted.length - 1].date : today;
+  return [...sorted, ...Array.from({ length: manual - sorted.length }, () => ({ date, revenue: avg, estimated: true }))];
+}
+
 // "YYYY-MM-DD" + n months (day clamped to the month's length).
 export function addMonths(date, n) {
   const [y, m, d] = date.split('-').map(Number);

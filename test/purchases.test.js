@@ -81,3 +81,14 @@ test('a row\'s money is split over its pairs', () => {
     [{ date: '2026-11-02', name: 'Adidas Hyperboost 42 + Nike Vomero 43', pairs: [0, 1, 1, 0, 0], net: 6000 }]);
   assert.equal(r[5].units[0].revenue, 3000);
 });
+
+test('a hand count adjusts the money: extra pairs at the average, fewer pairs drop the latest', async () => {
+  const { adjustUnits } = await import('../src/purchases.js');
+  const u = [{ date: '2026-10-01', revenue: 3000 }, { date: '2026-10-05', revenue: 3400 }];
+  assert.equal(adjustUnits(u, 1, '2026-11-09').map((x) => x.revenue).join(), '3000');
+  const more = adjustUnits(u, 4, '2026-11-09');
+  assert.equal(more.length, 4);
+  assert.equal(more[3].revenue, 3200);
+  assert.equal(more[3].date, '2026-10-05');
+  assert.equal(adjustUnits(u, null, '2026-11-09'), u);
+});

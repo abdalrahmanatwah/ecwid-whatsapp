@@ -28,7 +28,7 @@ import { metaAdsConfigured, monthSpend } from './meta_ads.js';
 import {
   normalizeBosta, normalizeQp, classify, saleRowValues, reviewRowValues, monthKey, bostaFee, bostaCustomerPaid, returnCost,
 } from './sales_rows.js';
-import { PURCHASES_TAB, FIRST_ROW as P_FIRST, parseDate, serialToDate, allocate, rowFormulas, cashCycles, CYCLES_TAB, CYCLE_MONTHS, CYCLE_HEADERS } from './purchases.js';
+import { PURCHASES_TAB, FIRST_ROW as P_FIRST, parseDate, serialToDate, allocate, rowFormulas, cashCycles, adjustUnits, CYCLES_TAB, CYCLE_MONTHS, CYCLE_HEADERS } from './purchases.js';
 
 const SHEET_ID = process.env.SALES_SHEET_ID || '';
 const ENABLED = String(process.env.SHEET_SYNC ?? 'true').toLowerCase() !== 'false';
@@ -466,7 +466,7 @@ async function syncPurchases(tabs, dryRun) {
     const manual = typeof p.raw[15] === 'number' ? p.raw[15] : null;
     const sold = manual ?? result[p.row].sold;
     const f = rowFormulas(p.row);
-    const cash = p.date ? cashCycles(p, units, today, CYCLE_MONTHS) : { collected: 0, paidBackOn: null, cycles: [] };
+    const cash = p.date ? cashCycles(p, adjustUnits(units, manual, today), today, CYCLE_MONTHS) : { collected: 0, paidBackOn: null, cycles: [] };
     const asDate = (v) => (typeof v === 'number' ? serialToDate(v) : String(v || ''));
     if (p.raw[5] !== sold || asDate(p.raw[10]) !== (last || '')) {
       writes.push({ range: `${q(PURCHASES_TAB)}!F${p.row}`, values: [[sold]] });
