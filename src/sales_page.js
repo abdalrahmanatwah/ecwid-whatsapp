@@ -198,6 +198,52 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:12p
 .tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .chip{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:7px 14px;font:inherit;font-size:14px;cursor:pointer}
 .chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+/* top-level views */
+.nav{display:flex;flex-direction:column;gap:12px;margin-bottom:18px}
+.seg{display:inline-flex;align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:4px;gap:2px;box-shadow:var(--shadow)}
+.seg button{border:0;background:transparent;color:var(--muted);font:inherit;font-size:14px;font-weight:500;padding:8px 16px;border-radius:10px;cursor:pointer;display:flex;align-items:center;gap:7px;white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.seg button:not([aria-pressed="true"]):hover{color:var(--ink);background:var(--bg)}
+.seg .dot{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.55}
+/* month strip */
+.mbar{display:flex;align-items:center;gap:8px}
+.mstrip{display:flex;gap:8px;overflow-x:auto;scroll-snap-type:x proximity;scrollbar-width:none;padding:2px;flex:1}
+.mstrip::-webkit-scrollbar{display:none}
+.mcard{flex:0 0 auto;scroll-snap-align:center;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:12px;padding:8px 14px 9px;cursor:pointer;font:inherit;text-align:start;min-width:96px;transition:transform .15s,border-color .15s}
+.mcard:hover{border-color:var(--muted);transform:translateY(-1px)}
+.mcard .mn{font-weight:600;font-size:14px;display:flex;align-items:baseline;gap:5px}
+.mcard .mn small{font-weight:400;color:var(--muted);font-size:11px}
+.mcard .ms{font-size:12px;color:var(--muted);margin-top:3px;display:flex;align-items:center;gap:6px}
+.mcard .ms i{display:block;height:4px;border-radius:2px;background:var(--accent);opacity:.7}
+.mcard[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.mcard[aria-pressed="true"] .mn small,.mcard[aria-pressed="true"] .ms{color:color-mix(in srgb,var(--bg) 70%,transparent)}
+.mcard[aria-pressed="true"] .ms i{background:var(--bg)}
+.mcard.yr{min-width:auto;padding:8px 10px;border-style:dashed;color:var(--muted);cursor:default;background:transparent;font-size:12px;display:flex;align-items:center}
+.arrow{flex:0 0 auto;width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer;font-size:16px;line-height:1;display:grid;place-items:center}
+.arrow:disabled{opacity:.35;cursor:default}
+@media (max-width:600px){.seg{align-self:stretch}.seg button{flex:1;justify-content:center;padding:8px 6px}.arrow{display:none}}
+/* purchases */
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;margin-bottom:14px}
+.pcard{display:flex;flex-direction:column;gap:10px}
+.pcard .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.pcard h3{margin:0;font-size:16px}
+.pcard .when{color:var(--muted);font-size:12px;margin-top:2px}
+.ring{--p:0;--c:var(--accent);width:64px;height:64px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;background:conic-gradient(var(--c) calc(var(--p)*1%),var(--line) 0)}
+.ring span{width:50px;height:50px;border-radius:50%;background:var(--panel);display:grid;place-items:center;font-size:13px;font-weight:600}
+.pstats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pstats div{background:var(--bg);border-radius:10px;padding:8px 10px}
+.pstats small{display:block;color:var(--muted);font-size:11px}
+.pstats b{font-size:15px}
+.pfoot{font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;border-top:1px dashed var(--line);padding-top:8px}
+.tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600}
+.tag.good{background:var(--good-soft);color:var(--good)} .tag.mid{background:var(--accent-soft);color:var(--accent)} .tag.bad{background:var(--bad-soft);color:var(--bad)}
+.stack{display:flex;height:14px;border-radius:999px;overflow:hidden;background:var(--line);margin:10px 0 8px}
+.stack i{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend b{width:9px;height:9px;border-radius:3px;display:inline-block}
+.split{display:grid;grid-template-columns:1.3fr 1fr;gap:14px;margin-bottom:14px}
+@media (max-width:900px){.split{grid-template-columns:1fr}}
 .months{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:18px;scrollbar-width:none}
 .updated{color:var(--muted);font-size:12px}
 .hero{display:grid;grid-template-columns:1.3fr 1fr;gap:14px;margin-bottom:14px}
@@ -273,7 +319,7 @@ tr.fresh td{animation:freshrow 2.4s ease-out 3}
     <div class="brand"><b>499<span>K</span></b><small>لوحة المبيعات</small></div>
     <div class="tools"><span class="updated" id="updated"></span><button class="chip" id="refresh">تحديث</button><button class="chip" id="theme" aria-label="الوضع الليلي">◐</button></div>
   </header>
-  <nav class="months" id="months"></nav>
+  <nav class="nav" id="months"></nav>
   <main id="app"><div class="skeleton"></div></main>
 </div>
 <canvas id="confetti" aria-hidden="true"></canvas>
@@ -325,7 +371,8 @@ function detectNew() {
   try { localStorage.setItem('499k-seen', JSON.stringify(all.map((x) => x.id))); } catch {}
   if (!fresh.length) return;
   for (const x of fresh) FRESH.add(x.id);
-  current = fresh[fresh.length - 1].m.key; // jump to the month of the newest one
+  // jump to the month of the newest one, unless another view (all / purchases) is open
+  if (!current || !current.startsWith('__')) current = fresh[fresh.length - 1].m.key;
   celebrate(fresh);
 }
 
@@ -377,8 +424,11 @@ async function load() {
     const r = await fetch(location.pathname.replace(/\/$/, '') + '/data.json', { cache: 'no-store' });
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'HTTP ' + r.status);
     DATA = await r.json();
+    if (!current) current = fromHash();
     detectNew();
+    if (current === '__buy' && !DATA.purchases?.length) current = null;
     if (!current || (!current.startsWith('__') && !DATA.months.some((m) => m.key === current))) current = DATA.months[0]?.key;
+    if (!current.startsWith('__')) lastMonth = current;
     $('#updated').textContent = 'آخر تحديث ' + new Date(DATA.updatedAt).toLocaleTimeString('ar-EG', { hour: 'numeric', minute: '2-digit' });
     render();
   } catch (e) {
@@ -388,11 +438,45 @@ async function load() {
 }
 $('#refresh').onclick = load;
 
+const AR_MONTHS = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+let lastMonth = null;
+function go(view) { current = view; if (!view.startsWith('__')) lastMonth = view; try { history.replaceState(null, '', '#' + (view === '__all' ? 'all' : view === '__buy' ? 'buy' : view)); } catch {} render(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+function fromHash() { const x = decodeURIComponent(location.hash.slice(1)); return x === 'all' ? '__all' : x === 'buy' ? '__buy' : /^\d{4}-\d{2}$/.test(x) ? x : null; }
+
 function render() {
   const nav = $('#months');
-  nav.replaceChildren(...DATA.months.map((m) => h('button', { class: 'chip', 'aria-pressed': String(m.key === current), onclick: () => { current = m.key; render(); } }, m.title)),
-    h('button', { class: 'chip', 'aria-pressed': String(current === '__all'), onclick: () => { current = '__all'; render(); } }, 'كل الشهور'),
-    ...(DATA.purchases?.length ? [h('button', { class: 'chip', 'aria-pressed': String(current === '__buy'), onclick: () => { current = '__buy'; render(); } }, 'المشتريات')] : []));
+  const months = DATA.months;
+  if (!lastMonth || !months.some((m) => m.key === lastMonth)) lastMonth = months[0]?.key;
+  const isMonth = !current.startsWith('__');
+  const curM = months.find((m) => m.key === lastMonth);
+  const seg = h('div', { class: 'seg', role: 'tablist' },
+    h('button', { 'aria-pressed': String(isMonth), onclick: () => go(lastMonth) }, h('i', { class: 'dot' }), curM ? 'الشهر: ' + curM.title.split(' ')[0] : 'الشهر'),
+    h('button', { 'aria-pressed': String(current === '__all'), onclick: () => go('__all') }, 'كل الشهور'),
+    ...(DATA.purchases?.length ? [h('button', { 'aria-pressed': String(current === '__buy'), onclick: () => go('__buy') }, 'المشتريات')] : []));
+  const parts = [seg];
+  if (isMonth) {
+    const maxSales = Math.max(...months.map((m) => num(m.total[5])), 1);
+    const strip = h('div', { class: 'mstrip' });
+    let year = null;
+    for (const m of months) {
+      const [y, mm] = m.key.split('-');
+      if (year && y !== year) strip.append(h('div', { class: 'mcard yr' }, y));
+      year = y;
+      const sales = num(m.total[5]);
+      strip.append(h('button', { class: 'mcard', 'aria-pressed': String(m.key === current), 'data-k': m.key, onclick: () => go(m.key) },
+        h('div', { class: 'mn' }, AR_MONTHS[Number(mm) - 1], h('small', {}, y)),
+        h('div', { class: 'ms' }, h('span', { class: 'num' }, sales >= 1000 ? Math.round(sales / 1000) + 'k' : fmt(sales)), h('i', { style: 'width:' + Math.max(6, sales / maxSales * 44) + 'px' }))));
+    }
+    const idx = months.findIndex((m) => m.key === current);
+    // months are newest first: "previous" (older) is idx+1
+    const older = h('button', { class: 'arrow', 'aria-label': 'الشهر اللي قبله', disabled: idx >= months.length - 1 ? '' : null, onclick: () => go(months[idx + 1].key) }, '›');
+    const newer = h('button', { class: 'arrow', 'aria-label': 'الشهر اللي بعده', disabled: idx <= 0 ? '' : null, onclick: () => go(months[idx - 1].key) }, '‹');
+    if (idx >= months.length - 1) older.disabled = true; else older.removeAttribute('disabled');
+    if (idx <= 0) newer.disabled = true; else newer.removeAttribute('disabled');
+    parts.push(h('div', { class: 'mbar' }, older, strip, newer));
+    requestAnimationFrame(() => { const el = strip.querySelector('[aria-pressed="true"]'); if (el) el.scrollIntoView({ block: 'nearest', inline: 'center' }); });
+  }
+  nav.replaceChildren(...parts);
   const app = $('#app');
   if (current === '__all') return app.replaceChildren(...renderAll());
   if (current === '__buy') return app.replaceChildren(...renderPurchases());
@@ -544,36 +628,61 @@ function simpleTable(rows, opts = {}) {
 }
 
 // Stock bought up front: how much of the money has come back.
+const PCOLORS = ['var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--c4)', 'var(--c5)', '#9c36b5', '#0c8599', '#e8590c'];
+function parseDMY(t) { const m = String(t || '').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/); return m ? Date.UTC(+m[3], +m[2] - 1, +m[1]) : null; }
 function renderPurchases() {
-  const P = DATA.purchases || [];
-  const t = { cost: 0, qty: 0, sold: 0, back: 0, left: 0, stock: 0 };
-  for (const r of P) { t.cost += num(r[4]); t.qty += num(r[3]); t.sold += num(r[5]); t.back += num(r[6]); t.left += num(r[7]); t.stock += num(r[8]); }
+  const P = (DATA.purchases || []).map((r, i) => {
+    const qty = num(r[3]), sold = Math.min(num(r[5]), qty);
+    const since = parseDMY(r[0]);
+    const days = since ? Math.max(1, Math.round((Date.now() - since) / 864e5)) : null;
+    const perWeek = days ? sold / days * 7 : 0;
+    const left = qty - sold;
+    const weeksLeft = perWeek > 0 ? left / perWeek : null;
+    return { name: String(r[1]).split('|')[0].trim(), date: r[0], price: num(r[2]), qty, cost: num(r[4]), sold, back: num(r[6]), left, stock: num(r[8]), last: r[10], pct: qty ? sold / qty * 100 : 0, days, perWeek, weeksLeft, color: PCOLORS[i % PCOLORS.length] };
+  });
+  const t = P.reduce((a, p) => ({ cost: a.cost + p.cost, qty: a.qty + p.qty, sold: a.sold + p.sold, back: a.back + p.back, left: a.left + p.left, stock: a.stock + p.stock }), { cost: 0, qty: 0, sold: 0, back: 0, left: 0, stock: 0 });
   const pct = t.cost ? Math.round(t.back / t.cost * 100) : 0;
-  const kpi = (label, v, sub) => h('div', { class: 'card kpi' }, h('div', { class: 'label' }, label), h('div', { class: 'value num' }, v), sub ? h('div', { class: 'hint' }, sub) : null);
   const out = [];
-  out.push(h('section', { class: 'hero', style: 'grid-template-columns:1fr' }, h('div', { class: 'card big profit' },
-    h('div', { class: 'label' }, 'فلوس البضاعة اللي رجعتلك'),
-    h('div', { class: 'value num' }, fmt(t.back), h('span', { style: 'font-size:.45em;color:var(--muted)' }, ' من ' + fmt(t.cost))),
-    h('div', { class: 'track', style: 'height:14px;background:var(--line);border-radius:999px;overflow:hidden;margin:12px 0 6px' },
-      h('div', { style: 'height:100%;width:' + pct + '%;background:var(--good);border-radius:999px' })),
-    h('div', { class: 'sub' }, h('b', { class: 'num' }, pct + '%'), ' رجع · الباقي ', h('b', { class: 'num' }, fmt(t.stock)), ' جنيه لسه بضاعة في المخزن'))));
-  out.push(h('section', { class: 'kpis' },
-    kpi('إجمالي الفواتير', fmt(t.cost), fmt(t.qty) + ' زوج'),
-    kpi('اتباع', fmt(t.sold), 'زوج'),
-    kpi('فاضل في المخزن', fmt(t.left), 'زوج'),
-    kpi('قيمة المخزون', fmt(t.stock), 'جنيه')));
-  // Per model: share of its pairs sold.
-  out.push(h('section', { class: 'card', style: 'margin-bottom:14px' }, h('h2', {}, 'كل موديل رجع منه كام'),
-    h('div', { class: 'bars' }, P.map((r) => {
-      const q = num(r[3]), sold = Math.min(num(r[5]), q), p = q ? sold / q * 100 : 0;
-      return h('div', { class: 'bar' },
-        h('div', { class: 'row', style: 'flex-wrap:wrap;gap:2px 12px' }, h('b', {}, r[1].split('|')[0].trim()),
-          h('span', {}, h('b', { class: 'num' }, fmt(sold)), ' من ', h('span', { class: 'num' }, fmt(q)), ' زوج · رجع ', h('b', { class: 'num' }, r[6] || '0'), h('span', { style: 'color:var(--muted)' }, ' · فاضل ', h('span', { class: 'num' }, r[8] || '0')))),
-        h('div', { class: 'track' }, h('div', { class: 'fill', style: 'width:' + p + '%;background:' + (p >= 80 ? 'var(--good)' : p >= 40 ? 'var(--accent)' : 'var(--bad)') })));
-    }))));
+
+  // Hero: money back + where the rest is sitting.
+  const stack = h('div', { class: 'stack', title: 'قيمة المخزون حسب الموديل' }, P.filter((p) => p.stock > 0).map((p) => h('i', { style: 'width:' + (p.stock / (t.stock || 1) * 100) + '%;background:' + p.color, title: p.name + ': ' + fmt(p.stock) })));
+  out.push(h('section', { class: 'split' },
+    h('div', { class: 'card big profit' },
+      h('div', { class: 'label' }, 'فلوس البضاعة اللي رجعتلك'),
+      h('div', { class: 'value num' }, fmt(t.back)),
+      h('div', { class: 'sub' }, 'من ', h('b', { class: 'num' }, fmt(t.cost)), ' اتدفعوا في ', h('b', { class: 'num' }, fmt(t.qty)), ' زوج'),
+      h('div', { class: 'stack', style: 'height:16px' }, h('i', { style: 'width:' + pct + '%;background:var(--good)' })),
+      h('div', { class: 'legend' }, h('span', {}, h('b', { style: 'background:var(--good)' }), h('span', { class: 'num' }, pct + '%'), ' رجع'), h('span', {}, h('b', { style: 'background:var(--line)' }), h('span', { class: 'num' }, (100 - pct) + '%'), ' لسه بضاعة'))),
+    h('div', { class: 'card' },
+      h('div', { class: 'label', style: 'color:var(--muted);font-size:14px' }, 'لسه في المخزن'),
+      h('div', { style: 'font-size:34px;font-weight:700;margin:6px 0 2px' }, h('span', { class: 'num' }, fmt(t.stock)), h('span', { style: 'font-size:14px;color:var(--muted);font-weight:400' }, ' ج · ', h('span', { class: 'num' }, fmt(t.left)), ' زوج')),
+      stack,
+      h('div', { class: 'legend' }, P.filter((p) => p.stock > 0).map((p) => h('span', {}, h('b', { style: 'background:' + p.color }), p.name, ' ', h('span', { class: 'num' }, fmt(p.stock))))))));
+
+  // One card per model.
+  out.push(h('section', { class: 'pgrid' }, P.map((p) => {
+    const tag = p.pct >= 80 ? ['good', 'قرب يخلص'] : p.pct >= 40 ? ['mid', 'ماشي كويس'] : ['bad', 'بطيء'];
+    const eta = p.left === 0 ? 'خلص ✓' : p.weeksLeft == null ? 'لسه مااتباعش منه' : p.weeksLeft < 1.5 ? 'هيخلص خلال أسبوع تقريباً' : 'هيخلص في حوالي ' + Math.round(p.weeksLeft) + ' أسبوع';
+    return h('div', { class: 'card pcard' },
+      h('div', { class: 'top' },
+        h('div', {}, h('h3', {}, p.name), h('div', { class: 'when' }, 'من ', h('span', { class: 'num' }, p.date), ' · ', h('span', { class: 'num' }, fmt(p.price)), ' ج للزوج'), h('div', { style: 'margin-top:6px' }, h('span', { class: 'tag ' + tag[0] }, tag[1]))),
+        h('div', { class: 'ring', style: '--p:' + p.pct.toFixed(1) + ';--c:' + (p.pct >= 80 ? 'var(--good)' : p.pct >= 40 ? 'var(--accent)' : 'var(--bad)') }, h('span', {}, h('span', { class: 'num', style: 'width:auto;height:auto;background:none' }, Math.round(p.pct) + '%')))),
+      h('div', { class: 'pstats' },
+        h('div', {}, h('small', {}, 'اتباع'), h('b', { class: 'num' }, fmt(p.sold)), h('span', { style: 'color:var(--muted);font-size:12px' }, ' من ', h('span', { class: 'num' }, fmt(p.qty)))),
+        h('div', {}, h('small', {}, 'فاضل'), h('b', { class: 'num' }, fmt(p.left)), h('span', { style: 'color:var(--muted);font-size:12px' }, ' زوج')),
+        h('div', {}, h('small', {}, 'رجعلك'), h('b', { class: 'num', style: 'color:var(--good)' }, fmt(p.back))),
+        h('div', {}, h('small', {}, 'قيمة الفاضل'), h('b', { class: 'num' }, fmt(p.stock)))),
+      h('div', { class: 'pfoot' },
+        h('span', {}, p.perWeek ? h('span', {}, h('span', { class: 'num' }, p.perWeek.toFixed(1)), ' زوج في الأسبوع') : '—'),
+        h('span', {}, eta)),
+      p.last ? h('div', { class: 'when' }, 'آخر بيعة ', h('span', { class: 'num' }, p.last)) : null);
+  })));
+
   const head = ['تاريخ الشراء', 'الموديل', 'سعر القطعة', 'العدد', 'الفاتورة', 'اتباع', 'رجعلك', 'فاضل', 'قيمة المخزون', 'نسبة اللي رجع', 'آخر بيعة'];
-  out.push(h('section', { class: 'card' }, h('h2', {}, 'الفواتير'),
-    simpleTable([head, ...P.map((r) => [r[0], r[1].split('|')[0].trim(), ...r.slice(2)]), ['', 'الإجمالي', '', fmt(t.qty), fmt(t.cost), fmt(t.sold), fmt(t.back), fmt(t.left), fmt(t.stock), pct + '%', '']], { min: 900 })));
+  const rows = (DATA.purchases || []).map((r) => [r[0], String(r[1]).split('|')[0].trim(), ...r.slice(2)]);
+  const d = h('details', { class: 'card' }, h('summary', {}, 'جدول الفواتير'), h('div', { class: 'inner' },
+    simpleTable([head, ...rows, ['', 'الإجمالي', '', fmt(t.qty), fmt(t.cost), fmt(t.sold), fmt(t.back), fmt(t.left), fmt(t.stock), pct + '%', '']], { min: 900 })));
+  out.push(d);
   return out;
 }
 
