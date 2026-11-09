@@ -52,3 +52,11 @@ test('a row with two bought models counts against both; "Adidas EDGE" is not "Hy
   assert.equal(r[5].sold, 2);
   assert.equal(r[6].sold, 1);
 });
+
+test('other spellings of a model after "|"', () => {
+  assert.equal(unitsInRow('rebook 43', 'Reebok Float | rebook', [0, 0, 0, 0, 1]), 1);
+  assert.equal(unitsInRow('Reebok Float Ride Energy X Size: 43', 'Reebok Float | rebook', [0, 0, 0, 0, 1]), 1);
+  const r = allocate([{ row: 9, date: '2026-11-01', key: 'Reebok Float | rebook', qty: 15 }],
+    [{ date: '2026-11-09', name: 'rebook 43', pairs: [0, 0, 0, 0, 1] }]);
+  assert.equal(r[9].sold, 1);
+});
