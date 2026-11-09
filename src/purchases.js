@@ -34,7 +34,10 @@ export function parseDate(v, year = new Date().getUTCFullYear()) {
 }
 
 // Pairs of `key` in one sales row. `pairs` = the row's brand pair counts (L..P).
+// The key may list other spellings separated by "|" (e.g. "Reebok Float | rebook").
 export function unitsInRow(name, key, pairs = []) {
+  const alts = String(key || '').split('|').map((a) => a.trim()).filter(Boolean);
+  if (alts.length > 1) return Math.max(0, ...alts.map((a) => unitsInRow(name, a, pairs)));
   const n = norm(name);
   const k = norm(key);
   if (!k || !n.includes(k)) return 0;
@@ -52,14 +55,14 @@ export function allocate(purchases, sales) {
   const out = {};
   const open = purchases
     .filter((p) => p.date && norm(p.key) && p.qty > 0)
-    .map((p) => ({ ...p, k: norm(p.key), left: p.qty }))
+    .map((p) => ({ ...p, k: String(p.key).toLowerCase().replace(/\s+/g, ''), left: p.qty }))
     .sort((a, b) => a.date.localeCompare(b.date) || a.row - b.row);
   for (const p of purchases) out[p.row] = { sold: 0, last: null };
   const keys = [...new Set(open.map((p) => p.k))];
   for (const s of [...sales].sort((a, b) => a.date.localeCompare(b.date))) {
     // Each model named on the row; its pairs go to that model's oldest open purchase(s).
     for (const k of keys) {
-      let units = unitsInRow(s.name, k, s.pairs);
+      let units = unitsInRow(s.name, open.find((p) => p.k === k).key, s.pairs);
       for (const p of open) {
         if (!units) break;
         if (p.k !== k || p.date > s.date || !p.left) continue;
