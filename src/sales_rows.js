@@ -291,6 +291,29 @@ function reviewOrSale(n, priceTable) {
   };
 }
 
+// An Ecwid order delivered by a private courier (no carrier record): the
+// order's items become the description, its total the amount collected.
+// `fee` is what the courier charged (0 if not given).
+export function privateSale(order, priceTable, date, fee = 0) {
+  const items = Array.isArray(order.items) ? order.items : [];
+  const parts = [];
+  let insoles = 0;
+  for (const it of items) {
+    const qty = Number(it.quantity) || 1;
+    const opts = (it.selectedOptions || []).map((o) => o.value).filter(Boolean).join(' ');
+    if (INSOLE.test(it.name || '') && !shoeItems(it.name || '').length) { insoles += qty; continue; }
+    for (let i = 0; i < qty; i++) parts.push(`${it.name}${opts ? ' Size: ' + opts : ''}`);
+  }
+  const description = parts.join(' + ') + (insoles ? ` // ${insoles} Comfort Foam Insoles` : '');
+  const n = {
+    id: `ecwid:${order.orderNumber || order.vendorOrderNumber || order.id}`,
+    carrier: 'private', description, amount: Number(order.total) || 0, fee: Number(fee) || 0, note: '', deliveredDate: date,
+  };
+  const c = reviewOrSale(n, priceTable);
+  if (c.action === 'sale') c.note = ['مندوب خاص · Ecwid #' + (order.orderNumber || order.id), c.note].filter(Boolean).join(' · ');
+  return c;
+}
+
 export function classify(n, priceTable) {
   if (n.carrier === 'qp') {
     if (/^\s*(رسوم|استرجاع)/.test(n.description)) return { action: 'skip' };
@@ -336,7 +359,7 @@ const BOSTA_SHIPPING_CELL = `${A}!$B$9`;
 
 // Columns A..Q of the month tab, for sheet row number r.
 export function saleRowValues(sale, r) {
-  const carrierLabel = sale.carrier === 'bosta' ? 'بوسطة' : 'QP';
+  const carrierLabel = sale.carrier === 'bosta' ? 'بوسطة' : sale.carrier === 'private' ? 'مندوب خاص' : 'QP';
   const cost = sale.costs.map((c) => (c.price ? String(c.price) : BRAND_COST_CELL[c.brand])).join('+');
   return [
     sheetSerial(sale.date),

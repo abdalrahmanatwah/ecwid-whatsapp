@@ -25,8 +25,9 @@ import { allQpOrders } from './qp_orders.js';
 import { store } from './store.js';
 import { notifyMerchant } from './notify.js';
 import { metaAdsConfigured, monthSpend } from './meta_ads.js';
+import { getOrder } from './ecwid.js';
 import {
-  normalizeBosta, normalizeQp, classify, saleRowValues, reviewRowValues, monthKey, bostaFee, bostaCustomerPaid, returnCost,
+  normalizeBosta, normalizeQp, classify, privateSale, saleRowValues, reviewRowValues, monthKey, bostaFee, bostaCustomerPaid, returnCost,
 } from './sales_rows.js';
 import { PURCHASES_TAB, FIRST_ROW as P_FIRST, parseDate, serialToDate, allocate, rowFormulas, cashCycles, adjustUnits, CYCLES_TAB, CYCLE_MONTHS, CYCLE_HEADERS } from './purchases.js';
 
@@ -708,6 +709,44 @@ sheetSyncRouter.get('/run', async (req, res) => {
 
 // Which Bosta listing endpoint works on this account, and what fields it returns.
 // ?tracking=123 also shows the field layout of one delivery from the single read.
+// Ecwid orders delivered by a private courier → sales rows.
+// /dashboard/sheet-sync/add-private?orders=A9AF9,LJUHG[&date=2026-11-09][&fee=0][&dry=1]
+sheetSyncRouter.get('/add-private', async (req, res) => {
+  try {
+    const ids = String(req.query.orders || '').split(/[\s,]+/).map((x) => x.replace(/^#/, '').trim()).filter(Boolean);
+    if (!ids.length) return res.status(400).json({ error: 'add ?orders=ID1,ID2' });
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date || '')) ? String(req.query.date) : cairoToday();
+    const dry = req.query.dry === '1';
+    const priceTable = await readPriceTable();
+    const out = { date, added: [], skipped: [] };
+    const sales = [];
+    for (const id of ids) {
+      try {
+        const order = await getOrder(id);
+        const c = privateSale(order, priceTable, date, req.query.fee);
+        if (c.action === 'sale') sales.push(c); else out.skipped.push({ id, reason: c.reason, description: c.description });
+      } catch (e) { out.skipped.push({ id, reason: e.message }); }
+    }
+    let tabs = await sheets.getTabs(SHEET_ID);
+    const known = new Set();
+    for (const t of monthTabsOf(tabs)) for (const x of await existingIds(t.tab.title, 'Q')) known.add(x);
+    const fresh = sales.filter((s) => { if (known.has(s.id)) { out.skipped.push({ id: s.id, reason: 'موجود في الشيت قبل كده' }); return false; } return true; });
+    if (fresh.length && !dry) {
+      let tab = findMonthTab(tabs, monthKey(date));
+      if (!tab) { tab = await createMonthTab(tabs, monthKey(date)); tabs = await sheets.getTabs(SHEET_ID); }
+      await appendSales(tab, tab.sheetId, fresh);
+      const state = loadState();
+      for (const s of fresh) state.processed[s.id] = { action: 'sale', at: new Date().toISOString(), private: true };
+      saveState(state);
+    }
+    out.added = fresh.map((s) => ({ id: s.id, name: s.name, amount: s.amount, brand: s.brand, note: s.note }));
+    out.dryRun = dry;
+    res.json(out);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 sheetSyncRouter.get('/bosta-probe', async (req, res) => {
   const out = { listing: await probeListing() };
   if (req.query.tracking) {
