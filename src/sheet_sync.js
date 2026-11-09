@@ -243,6 +243,14 @@ async function appendSales(tab, sheetId, sales) {
         fields: 'userEnteredFormat.backgroundColor',
       },
     },
+    {
+      // Day/month, whatever format the row above happened to have.
+      repeatCell: {
+        range: { sheetId, startRowIndex: T - 1, endRowIndex: T - 1 + n, startColumnIndex: 0, endColumnIndex: 1 },
+        cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'dd/mm' } } },
+        fields: 'userEnteredFormat.numberFormat',
+      },
+    },
   ]);
   const values = sales.map((s, i) => saleRowValues(s, T + i));
   await sheets.updateValues(SHEET_ID, `${q(tab.title)}!A${T}:Q${T + n - 1}`, values);

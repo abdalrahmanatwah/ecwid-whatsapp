@@ -55,15 +55,27 @@ function monthKeyOf(title) {
 
 const cell = (row, i) => String(row?.[i] ?? '').trim();
 
-function parseMonth(title, key, rows) {
+function parseMonth(title, key, rows, rawDates = []) {
   const header = rows.findIndex((r) => cell(r, 0) === 'التاريخ');
   const total = rows.findIndex((r) => cell(r, 2) === 'الإجمالي');
   if (header === -1 || total === -1) return null;
   const cols = rows[header].map((c) => String(c || '').trim());
-  const orders = rows
-    .slice(header + 1, total)
-    .filter((r) => cell(r, 2))
-    .map((r) => Array.from({ length: 17 }, (_, i) => cell(r, i)));
+  // Each order: columns A–Q as displayed, plus [17] = the date as a Sheets
+  // serial number (sorting by the displayed text breaks when a cell is
+  // formatted mm/dd instead of dd/mm).
+  const orders = [];
+  for (let i = header + 1; i < total; i++) {
+    const r = rows[i];
+    if (!cell(r, 2)) continue;
+    const row = Array.from({ length: 17 }, (_, c) => cell(r, c));
+    const serial = Number(rawDates[i]?.[0]);
+    row.push(Number.isFinite(serial) && serial > 40000 ? serial : null);
+    if (row[17]) {
+      const d = new Date(Date.UTC(1899, 11, 30) + row[17] * 86_400_000);
+      row[0] = String(d.getUTCDate()).padStart(2, '0') + '/' + String(d.getUTCMonth() + 1).padStart(2, '0');
+    }
+    orders.push(row);
+  }
   const summary = [];
   const supplier = [];
   let inSupplier = false;
@@ -93,8 +105,11 @@ async function buildData() {
   for (const t of tabs) {
     const key = monthKeyOf(t.title);
     if (!key) continue;
-    const rows = await sheets.getValues(SHEET_ID, `'${t.title}'!A1:Q600`);
-    const m = parseMonth(t.title, key, rows);
+    const [rows, rawDates] = await Promise.all([
+      sheets.getValues(SHEET_ID, `'${t.title}'!A1:Q600`),
+      sheets.getFormulas(SHEET_ID, `'${t.title}'!A1:A600`),
+    ]);
+    const m = parseMonth(t.title, key, rows, rawDates);
     if (m) months.push(m);
   }
   months.sort((a, b) => b.key.localeCompare(a.key));
@@ -299,7 +314,11 @@ function detectNew() {
   let seen = null;
   try { seen = JSON.parse(localStorage.getItem('499k-seen') || 'null'); } catch {}
   const known = new Set(seen || []);
-  const fresh = seen ? all.filter((x) => !known.has(x.id)) : [];
+  const todaySerial = Math.floor((Date.now() + 2 * 3600e3) / 864e5) + 25569; // Cairo day as a Sheets serial
+  let fresh = seen ? all.filter((x) => !known.has(x.id)) : all.filter((x) => x.r[17] === todaySerial);
+  if (/[?&]celebrate/.test(location.search) && !fresh.length) {
+    fresh = [...all].sort((a, b) => (a.r[17] || 0) - (b.r[17] || 0)).slice(-1);
+  }
   try { localStorage.setItem('499k-seen', JSON.stringify(all.map((x) => x.id))); } catch {}
   if (!fresh.length) return;
   for (const x of fresh) FRESH.add(x.id);
@@ -403,8 +422,8 @@ function renderMonth(m) {
 
   // daily chart
   const byDay = {};
-  for (const r of m.orders) { const d = r[0] || '؟'; (byDay[d] ||= { sales: 0, profit: 0, n: 0 }); byDay[d].sales += num(r[5]); byDay[d].profit += num(r[9]); byDay[d].n++; }
-  const days = Object.keys(byDay).sort((a, b) => { const [da, ma] = a.split('/').map(Number), [db, mb] = b.split('/').map(Number); return (ma - mb) || (da - db); });
+  for (const r of m.orders) { const d = r[0] || '؟'; (byDay[d] ||= { sales: 0, profit: 0, n: 0, k: r[17] || 0 }); byDay[d].sales += num(r[5]); byDay[d].profit += num(r[9]); byDay[d].n++; }
+  const days = Object.keys(byDay).sort((a, b) => (byDay[a].k - byDay[b].k) || a.localeCompare(b));
   out.push(h('section', { class: 'grid2' },
     h('div', { class: 'card' }, h('h2', {}, 'المبيعات اليومية', h('div', { class: 'legend' }, h('span', {}, h('i', { style: 'background:var(--c1)' }), 'المبيعات'), h('span', {}, h('i', { style: 'background:var(--c3)' }), 'الربح بعد الشحن'))), dailyChart(days, byDay)),
     h('div', { class: 'card' }, h('h2', {}, 'الأزواج حسب البراند'), brandBars(m), h('h2', { style: 'margin-top:18px' }, 'حسب شركة الشحن'), carrierBars(m))));
@@ -473,7 +492,11 @@ function ordersTable(m) {
   const numeric = new Set([4, 5, 6, 7, 8, 9]);
   let q = '', carrier = '', sortCol = null, dir = 1;
   // Default order: newest first — by date (dd/MM), then later rows first.
-  const dayKey = (r, i) => { const [d, mo] = String(r[0]).split('/').map(Number); return ((mo || 0) * 100 + (d || 0)) * 10000 + i; };
+  const dayKey = (r, i) => {
+    if (r[17]) return r[17] * 10000 + i;
+    const [d, mo] = String(r[0]).split('/').map(Number);
+    return (46000 + (mo || 0) * 31 + (d || 0)) * 10000 + i;
+  };
   const indexed = m.orders.map((r, i) => ({ r, k: dayKey(r, i) }));
   const tbody = h('tbody'), count = h('small');
   const carriers = [...new Set(m.orders.map((r) => r[1]).filter(Boolean))];
