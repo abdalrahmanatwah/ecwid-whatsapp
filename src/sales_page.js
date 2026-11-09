@@ -114,11 +114,12 @@ async function buildData() {
   }
   months.sort((a, b) => b.key.localeCompare(a.key));
   const has = (name) => tabs.some((t) => t.title === name);
-  const [returns, review, assumptions, purchases] = await Promise.all([
+  const [returns, review, assumptions, purchases, cycles] = await Promise.all([
     has('المرتجعات') ? sheets.getValues(SHEET_ID, `'المرتجعات'!A1:H200`) : [],
     has('مراجعة') ? sheets.getValues(SHEET_ID, `'مراجعة'!A1:H500`) : [],
     has('الافتراضات') ? sheets.getValues(SHEET_ID, `'الافتراضات'!A1:G200`) : [],
-    has('المشتريات') ? sheets.getValues(SHEET_ID, `'المشتريات'!A5:K300`) : [],
+    has('المشتريات') ? sheets.getValues(SHEET_ID, `'المشتريات'!A5:O300`) : [],
+    has('دورات المشتريات') ? sheets.getValues(SHEET_ID, `'دورات المشتريات'!A2:K2000`) : [],
   ]);
   const data = {
     updatedAt: new Date().toISOString(),
@@ -127,7 +128,10 @@ async function buildData() {
     review,
     assumptions: assumptions.slice(2).map((r) => [cell(r, 0), cell(r, 1), cell(r, 2)]).filter((r) => r[0] && r[1]),
     // date, model, price, qty, invoice total, sold, recovered, left, stock value, % back, last sale
-    purchases: purchases.map((r) => Array.from({ length: 11 }, (_, i) => cell(r, i))).filter((r) => r[1] && r[3]),
+    // + collected after shipping, left of the invoice, profit after it paid back, paid back on
+    purchases: purchases.map((r) => Array.from({ length: 15 }, (_, i) => cell(r, i))).filter((r) => r[1] && r[3]),
+    // model, purchase date, cycle, from, to, sold, collected, cumulative, recovered, left, profit
+    cycles: cycles.map((r) => Array.from({ length: 11 }, (_, i) => cell(r, i))).filter((r) => r[0] && r[2]),
     prices: assumptions.slice(3).map((r) => [cell(r, 4), cell(r, 5), cell(r, 6)]).filter((r) => r[0] && /\d/.test(r[1])),
   };
   cache = { at: Date.now(), data };
@@ -243,6 +247,13 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:12p
 .legend span{display:inline-flex;align-items:center;gap:6px}
 .legend b{width:9px;height:9px;border-radius:3px;display:inline-block}
 .split{display:grid;grid-template-columns:1.3fr 1fr;gap:14px;margin-bottom:14px}
+.cycles{display:flex;flex-direction:column;gap:8px}
+.ctitle{font-size:12px;color:var(--muted)}
+.cyc{border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.cyc.now{border-color:var(--accent);background:color-mix(in srgb,var(--accent-soft) 45%,transparent)}
+.crow{display:flex;align-items:center;gap:8px;font-size:13px}
+.crow .cdates{color:var(--muted);font-size:12px}
+.crow2{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;margin-top:3px}
 @media (max-width:900px){.split{grid-template-columns:1fr}}
 .months{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:18px;scrollbar-width:none}
 .updated{color:var(--muted);font-size:12px}
@@ -632,56 +643,78 @@ const PCOLORS = ['var(--c1)', 'var(--c2)', 'var(--c3)', 'var(--c4)', 'var(--c5)'
 function parseDMY(t) { const m = String(t || '').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/); return m ? Date.UTC(+m[3], +m[2] - 1, +m[1]) : null; }
 function renderPurchases() {
   const P = (DATA.purchases || []).map((r, i) => {
-    const qty = num(r[3]), sold = Math.min(num(r[5]), qty);
+    const name = String(r[1]).split('|')[0].trim();
+    const qty = num(r[3]), sold = Math.min(num(r[5]), qty), cost = num(r[4]);
+    const collected = num(r[11]), back = Math.min(collected, cost);
     const since = parseDMY(r[0]);
     const days = since ? Math.max(1, Math.round((Date.now() - since) / 864e5)) : null;
     const perWeek = days ? sold / days * 7 : 0;
     const left = qty - sold;
-    const weeksLeft = perWeek > 0 ? left / perWeek : null;
-    return { name: String(r[1]).split('|')[0].trim(), date: r[0], price: num(r[2]), qty, cost: num(r[4]), sold, back: num(r[6]), left, stock: num(r[8]), last: r[10], pct: qty ? sold / qty * 100 : 0, days, perWeek, weeksLeft, color: PCOLORS[i % PCOLORS.length] };
+    const cycles = (DATA.cycles || []).filter((c) => c[0] === name && c[1] === r[0]);
+    return { name, date: r[0], price: num(r[2]), qty, cost, sold, left, stock: num(r[8]), last: r[10], collected, back, owe: Math.max(0, cost - collected), profit: Math.max(0, collected - cost), paidOn: r[14],
+      pctBack: cost ? back / cost * 100 : 0, perWeek, weeksLeft: perWeek > 0 ? left / perWeek : null, cycles, color: PCOLORS[i % PCOLORS.length] };
   });
-  const t = P.reduce((a, p) => ({ cost: a.cost + p.cost, qty: a.qty + p.qty, sold: a.sold + p.sold, back: a.back + p.back, left: a.left + p.left, stock: a.stock + p.stock }), { cost: 0, qty: 0, sold: 0, back: 0, left: 0, stock: 0 });
+  const t = P.reduce((a, p) => ({ cost: a.cost + p.cost, qty: a.qty + p.qty, sold: a.sold + p.sold, back: a.back + p.back, profit: a.profit + p.profit, owe: a.owe + p.owe, left: a.left + p.left, stock: a.stock + p.stock }),
+    { cost: 0, qty: 0, sold: 0, back: 0, profit: 0, owe: 0, left: 0, stock: 0 });
   const pct = t.cost ? Math.round(t.back / t.cost * 100) : 0;
   const out = [];
 
-  // Hero: money back + where the rest is sitting.
-  const stack = h('div', { class: 'stack', title: 'قيمة المخزون حسب الموديل' }, P.filter((p) => p.stock > 0).map((p) => h('i', { style: 'width:' + (p.stock / (t.stock || 1) * 100) + '%;background:' + p.color, title: p.name + ': ' + fmt(p.stock) })));
+  // Hero: cash back out of the invoices, profit once an invoice has paid back, and the stock still on hand.
   out.push(h('section', { class: 'split' },
     h('div', { class: 'card big profit' },
-      h('div', { class: 'label' }, 'فلوس البضاعة اللي رجعتلك'),
+      h('div', { class: 'label' }, 'رجع من فلوس البضاعة (كاش بعد الشحن)'),
       h('div', { class: 'value num' }, fmt(t.back)),
-      h('div', { class: 'sub' }, 'من ', h('b', { class: 'num' }, fmt(t.cost)), ' اتدفعوا في ', h('b', { class: 'num' }, fmt(t.qty)), ' زوج'),
+      h('div', { class: 'sub' }, 'من ', h('b', { class: 'num' }, fmt(t.cost)), ' · فاضل ', h('b', { class: 'num' }, fmt(t.owe)), ' يرجعوا'),
       h('div', { class: 'stack', style: 'height:16px' }, h('i', { style: 'width:' + pct + '%;background:var(--good)' })),
-      h('div', { class: 'legend' }, h('span', {}, h('b', { style: 'background:var(--good)' }), h('span', { class: 'num' }, pct + '%'), ' رجع'), h('span', {}, h('b', { style: 'background:var(--line)' }), h('span', { class: 'num' }, (100 - pct) + '%'), ' لسه بضاعة'))),
+      h('div', { class: 'legend' },
+        h('span', {}, h('b', { style: 'background:var(--good)' }), h('span', { class: 'num' }, pct + '%'), ' رجع'),
+        h('span', {}, 'مكسب بعد ما الفواتير رجعت: ', h('b', { class: 'num', style: 'width:auto;height:auto;color:var(--good);background:none' }, fmt(t.profit))))),
     h('div', { class: 'card' },
-      h('div', { class: 'label', style: 'color:var(--muted);font-size:14px' }, 'لسه في المخزن'),
+      h('div', { class: 'label', style: 'color:var(--muted);font-size:14px' }, 'لسه في المخزن (بسعر الجملة)'),
       h('div', { style: 'font-size:34px;font-weight:700;margin:6px 0 2px' }, h('span', { class: 'num' }, fmt(t.stock)), h('span', { style: 'font-size:14px;color:var(--muted);font-weight:400' }, ' ج · ', h('span', { class: 'num' }, fmt(t.left)), ' زوج')),
-      stack,
+      h('div', { class: 'stack' }, P.filter((p) => p.stock > 0).map((p) => h('i', { style: 'width:' + (p.stock / (t.stock || 1) * 100) + '%;background:' + p.color, title: p.name + ': ' + fmt(p.stock) }))),
       h('div', { class: 'legend' }, P.filter((p) => p.stock > 0).map((p) => h('span', {}, h('b', { style: 'background:' + p.color }), p.name, ' ', h('span', { class: 'num' }, fmt(p.stock))))))));
 
-  // One card per model.
+  // One card per invoice, with its 2-month cycles.
   out.push(h('section', { class: 'pgrid' }, P.map((p) => {
-    const tag = p.pct >= 80 ? ['good', 'قرب يخلص'] : p.pct >= 40 ? ['mid', 'ماشي كويس'] : ['bad', 'بطيء'];
-    const eta = p.left === 0 ? 'خلص ✓' : p.weeksLeft == null ? 'لسه مااتباعش منه' : p.weeksLeft < 1.5 ? 'هيخلص خلال أسبوع تقريباً' : 'هيخلص في حوالي ' + Math.round(p.weeksLeft) + ' أسبوع';
+    const paid = p.owe === 0 && p.cost > 0;
+    const tag = paid ? ['good', 'الفاتورة رجعت ✓'] : p.pctBack >= 50 ? ['mid', 'رجع أكتر من النص'] : ['bad', 'لسه بدري'];
+    const ringC = paid ? 'var(--good)' : p.pctBack >= 50 ? 'var(--accent)' : 'var(--bad)';
+    const eta = p.left === 0 ? 'البضاعة خلصت' : p.weeksLeft == null ? 'لسه مااتباعش منه' : p.weeksLeft < 1.5 ? 'البضاعة هتخلص خلال أسبوع تقريباً' : 'البضاعة هتخلص في حوالي ' + Math.round(p.weeksLeft) + ' أسبوع';
+    const today = Date.now();
+    const cyc = p.cycles.length ? h('div', { class: 'cycles' }, h('div', { class: 'ctitle' }, 'الدورات (كل شهرين من تاريخ الشراء)'),
+      p.cycles.map((c) => {
+        const running = parseDMY(c[4]) != null && parseDMY(c[4]) + 864e5 > today;
+        const recPct = p.cost ? Math.min(100, num(c[8]) / p.cost * 100) : 0;
+        return h('div', { class: 'cyc' + (running ? ' now' : '') },
+          h('div', { class: 'crow' },
+            h('b', {}, 'الدورة ' + c[2]), h('span', { class: 'cdates' }, 'من ', h('span', { class: 'num' }, c[3].slice(0, 5)), ' لـ ', h('span', { class: 'num' }, c[4].slice(0, 5))), running ? h('span', { class: 'tag mid' }, 'شغالة') : null),
+          h('div', { class: 'crow2' },
+            h('span', {}, h('span', { class: 'num' }, c[5]), ' زوج'), h('span', {}, 'اتحصّل ', h('span', { class: 'num' }, c[6])),
+            num(c[10]) > 0 ? h('span', { style: 'color:var(--good)' }, 'مكسب ', h('span', { class: 'num' }, c[10])) : h('span', { style: 'color:var(--muted)' }, 'فاضل ', h('span', { class: 'num' }, c[9]))),
+          h('div', { class: 'stack', style: 'height:6px;margin:6px 0 0' }, h('i', { style: 'width:' + recPct + '%;background:' + (recPct >= 100 ? 'var(--good)' : 'var(--accent)') })));
+      })) : null;
     return h('div', { class: 'card pcard' },
       h('div', { class: 'top' },
-        h('div', {}, h('h3', {}, p.name), h('div', { class: 'when' }, 'من ', h('span', { class: 'num' }, p.date), ' · ', h('span', { class: 'num' }, fmt(p.price)), ' ج للزوج'), h('div', { style: 'margin-top:6px' }, h('span', { class: 'tag ' + tag[0] }, tag[1]))),
-        h('div', { class: 'ring', style: '--p:' + p.pct.toFixed(1) + ';--c:' + (p.pct >= 80 ? 'var(--good)' : p.pct >= 40 ? 'var(--accent)' : 'var(--bad)') }, h('span', {}, h('span', { class: 'num', style: 'width:auto;height:auto;background:none' }, Math.round(p.pct) + '%')))),
+        h('div', {}, h('h3', {}, p.name), h('div', { class: 'when' }, 'من ', h('span', { class: 'num' }, p.date), ' · ', h('span', { class: 'num' }, fmt(p.qty)), ' زوج × ', h('span', { class: 'num' }, fmt(p.price))), h('div', { style: 'margin-top:6px' }, h('span', { class: 'tag ' + tag[0] }, tag[1]))),
+        h('div', { class: 'ring', style: '--p:' + p.pctBack.toFixed(1) + ';--c:' + ringC }, h('span', {}, h('span', { class: 'num', style: 'width:auto;height:auto;background:none' }, Math.round(p.pctBack) + '%')))),
       h('div', { class: 'pstats' },
-        h('div', {}, h('small', {}, 'اتباع'), h('b', { class: 'num' }, fmt(p.sold)), h('span', { style: 'color:var(--muted);font-size:12px' }, ' من ', h('span', { class: 'num' }, fmt(p.qty)))),
-        h('div', {}, h('small', {}, 'فاضل'), h('b', { class: 'num' }, fmt(p.left)), h('span', { style: 'color:var(--muted);font-size:12px' }, ' زوج')),
-        h('div', {}, h('small', {}, 'رجعلك'), h('b', { class: 'num', style: 'color:var(--good)' }, fmt(p.back))),
-        h('div', {}, h('small', {}, 'قيمة الفاضل'), h('b', { class: 'num' }, fmt(p.stock)))),
+        h('div', {}, h('small', {}, 'الفاتورة'), h('b', { class: 'num' }, fmt(p.cost))),
+        h('div', {}, h('small', {}, 'اتحصّل (بعد الشحن)'), h('b', { class: 'num' }, fmt(p.collected))),
+        paid ? h('div', {}, h('small', {}, 'مكسب بعد ما رجعت'), h('b', { class: 'num', style: 'color:var(--good)' }, fmt(p.profit)))
+          : h('div', {}, h('small', {}, 'فاضل يرجع'), h('b', { class: 'num', style: 'color:var(--bad)' }, fmt(p.owe))),
+        h('div', {}, h('small', {}, 'اتباع / فاضل'), h('b', { class: 'num' }, fmt(p.sold)), h('span', { style: 'color:var(--muted);font-size:12px' }, ' / ', h('span', { class: 'num' }, fmt(p.left)), ' زوج'))),
+      paid && p.paidOn ? h('div', { class: 'when', style: 'color:var(--good)' }, 'رجعت كاملة يوم ', h('span', { class: 'num' }, p.paidOn), ' — أي بيعة بعدها مكسب') : null,
+      cyc,
       h('div', { class: 'pfoot' },
         h('span', {}, p.perWeek ? h('span', {}, h('span', { class: 'num' }, p.perWeek.toFixed(1)), ' زوج في الأسبوع') : '—'),
-        h('span', {}, eta)),
-      p.last ? h('div', { class: 'when' }, 'آخر بيعة ', h('span', { class: 'num' }, p.last)) : null);
+        h('span', {}, eta)));
   })));
 
-  const head = ['تاريخ الشراء', 'الموديل', 'سعر القطعة', 'العدد', 'الفاتورة', 'اتباع', 'رجعلك', 'فاضل', 'قيمة المخزون', 'نسبة اللي رجع', 'آخر بيعة'];
-  const rows = (DATA.purchases || []).map((r) => [r[0], String(r[1]).split('|')[0].trim(), ...r.slice(2)]);
+  const head = ['تاريخ الشراء', 'الموديل', 'سعر القطعة', 'العدد', 'الفاتورة', 'اتباع', 'اتحصّل', 'فاضل من الفاتورة', 'مكسب بعد ما رجعت', 'رجعت يوم', 'فاضل زوج', 'آخر بيعة'];
+  const rows = P.map((p) => [p.date, p.name, fmt(p.price), fmt(p.qty), fmt(p.cost), fmt(p.sold), fmt(p.collected), fmt(p.owe), fmt(p.profit), p.paidOn || '—', fmt(p.left), p.last || '—']);
   const d = h('details', { class: 'card' }, h('summary', {}, 'جدول الفواتير'), h('div', { class: 'inner' },
-    simpleTable([head, ...rows, ['', 'الإجمالي', '', fmt(t.qty), fmt(t.cost), fmt(t.sold), fmt(t.back), fmt(t.left), fmt(t.stock), pct + '%', '']], { min: 900 })));
+    simpleTable([head, ...rows, ['', 'الإجمالي', '', fmt(t.qty), fmt(t.cost), fmt(t.sold), '', fmt(t.owe), fmt(t.profit), '', fmt(t.left), '']], { min: 960 })));
   out.push(d);
   return out;
 }

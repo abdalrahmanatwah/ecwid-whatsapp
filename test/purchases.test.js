@@ -30,8 +30,8 @@ test('sales count from the purchase date, oldest purchase first, never more than
     { date: '2026-11-12', name: 'Hyperboost 42 / 43', pairs: [0, 2, 0, 0, 0] },
   ];
   const r = allocate(purchases, sales);
-  assert.deepEqual(r[5], { sold: 2, last: '2026-11-05' });
-  assert.deepEqual(r[6], { sold: 2, last: '2026-11-12' });
+  assert.equal(r[5].sold, 2); assert.equal(r[5].last, '2026-11-05');
+  assert.equal(r[6].sold, 2); assert.equal(r[6].last, '2026-11-12');
 });
 
 test('a row with two different models of the same brand counts only the named one', () => {
@@ -59,4 +59,25 @@ test('other spellings of a model after "|"', () => {
   const r = allocate([{ row: 9, date: '2026-11-01', key: 'Reebok Float | rebook', qty: 15 }],
     [{ date: '2026-11-09', name: 'rebook 43', pairs: [0, 0, 0, 0, 1] }]);
   assert.equal(r[9].sold, 1);
+});
+
+test('cash view: money collected pays back the invoice first, then it is profit, reported every 2 months', async () => {
+  const { cashCycles, addMonths } = await import('../src/purchases.js');
+  assert.equal(addMonths('2026-09-15', 2), '2026-11-15');
+  assert.equal(addMonths('2026-12-31', 2), '2027-02-28');
+  // 5 pairs for 6,000; 3 sold for 3,000 each (after shipping)
+  const p = { date: '2026-09-15', price: 1200, qty: 5 };
+  const units = [{ date: '2026-09-20', revenue: 3000 }, { date: '2026-10-10', revenue: 3000 }, { date: '2026-12-01', revenue: 3000 }];
+  const r = cashCycles(p, units, '2026-12-05', 2);
+  assert.equal(r.collected, 9000);
+  assert.equal(r.paidBackOn, '2026-10-10');
+  assert.equal(r.cycles.length, 2);
+  assert.deepEqual(r.cycles[0], { n: 1, from: '2026-09-15', to: '2026-11-14', sold: 2, collected: 6000, cum: 6000, recovered: 6000, left: 0, profit: 0 });
+  assert.deepEqual(r.cycles[1], { n: 2, from: '2026-11-15', to: '2027-01-14', sold: 1, collected: 3000, cum: 9000, recovered: 6000, left: 0, profit: 3000 });
+});
+
+test('a row\'s money is split over its pairs', () => {
+  const r = allocate([{ row: 5, date: '2026-11-01', key: 'Hyperboost', qty: 10 }],
+    [{ date: '2026-11-02', name: 'Adidas Hyperboost 42 + Nike Vomero 43', pairs: [0, 1, 1, 0, 0], net: 6000 }]);
+  assert.equal(r[5].units[0].revenue, 3000);
 });
