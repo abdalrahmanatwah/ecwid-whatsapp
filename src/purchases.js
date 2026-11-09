@@ -49,20 +49,24 @@ export function unitsInRow(name, key, pairs = []) {
   return !severalItems && brands.length === 1 ? Math.max(occ, brands[0]) : occ;
 }
 
-// purchases: [{ row, date, key, qty }]; sales: [{ date, name, pairs }]
-// → { [row]: { sold, last } }
+// purchases: [{ row, date, key, qty }]; sales: [{ date, name, pairs, net }]
+// (net = what the carrier paid out for the whole row, after shipping)
+// → { [row]: { sold, last, units: [{ date, revenue }] } }
 export function allocate(purchases, sales) {
   const out = {};
   const open = purchases
     .filter((p) => p.date && norm(p.key) && p.qty > 0)
     .map((p) => ({ ...p, k: String(p.key).toLowerCase().replace(/\s+/g, ''), left: p.qty }))
     .sort((a, b) => a.date.localeCompare(b.date) || a.row - b.row);
-  for (const p of purchases) out[p.row] = { sold: 0, last: null };
+  for (const p of purchases) out[p.row] = { sold: 0, last: null, units: [] };
   const keys = [...new Set(open.map((p) => p.k))];
   for (const s of [...sales].sort((a, b) => a.date.localeCompare(b.date))) {
+    const rowPairs = Math.max(1, (s.pairs || []).map(Number).filter((x) => x > 0).reduce((a, b) => a + b, 0));
     // Each model named on the row; its pairs go to that model's oldest open purchase(s).
     for (const k of keys) {
       let units = unitsInRow(s.name, open.find((p) => p.k === k).key, s.pairs);
+      // The row's money is split evenly over its pairs.
+      const perPair = (Number(s.net) || 0) / Math.max(rowPairs, units);
       for (const p of open) {
         if (!units) break;
         if (p.k !== k || p.date > s.date || !p.left) continue;
@@ -71,22 +75,70 @@ export function allocate(purchases, sales) {
         units -= take;
         out[p.row].sold += take;
         out[p.row].last = s.date;
+        for (let i = 0; i < take; i++) out[p.row].units.push({ date: s.date, revenue: perPair });
       }
     }
   }
   return out;
 }
 
+// "YYYY-MM-DD" + n months (day clamped to the month's length).
+export function addMonths(date, n) {
+  const [y, m, d] = date.split('-').map(Number);
+  const first = new Date(Date.UTC(y, m - 1 + n, 1));
+  const last = new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), Math.min(d, last))).toISOString().slice(0, 10);
+}
+const dayBefore = (date) => new Date(Date.parse(date + 'T00:00:00Z') - 86400000).toISOString().slice(0, 10);
+
+// Cash view of one purchase: everything collected first pays back the invoice,
+// whatever comes in after that is profit. Reported in cycles of `months`
+// months from the purchase date, up to today.
+// → { collected, paidBackOn, cycles: [{ n, from, to, sold, collected, cum, recovered, left, profit }] }
+export function cashCycles(purchase, units, today, months = 2) {
+  const cost = purchase.price * purchase.qty;
+  const sorted = [...units].sort((a, b) => a.date.localeCompare(b.date));
+  let cum = 0;
+  let paidBackOn = null;
+  for (const u of sorted) {
+    cum += u.revenue;
+    if (!paidBackOn && cum >= cost - 0.5) paidBackOn = u.date;
+  }
+  const cycles = [];
+  let running = 0;
+  for (let n = 0; ; n++) {
+    const from = addMonths(purchase.date, n * months);
+    if (from > today && n > 0) break;
+    const to = dayBefore(addMonths(purchase.date, (n + 1) * months));
+    const inside = sorted.filter((u) => u.date >= from && u.date <= to);
+    const got = inside.reduce((a, u) => a + u.revenue, 0);
+    running += got;
+    cycles.push({
+      n: n + 1, from, to, sold: inside.length, collected: Math.round(got), cum: Math.round(running),
+      recovered: Math.round(Math.min(running, cost)), left: Math.round(Math.max(0, cost - running)), profit: Math.round(Math.max(0, running - cost)),
+    });
+    if (n > 60) break;
+  }
+  return { collected: Math.round(cum), paidBackOn, cycles };
+}
+
+export const CYCLES_TAB = 'دورات المشتريات';
+export const CYCLE_MONTHS = 2;
+export const CYCLE_HEADERS = ['الموديل', 'تاريخ الشراء', 'الدورة', 'من', 'إلى', 'اتباع في الدورة', 'اتحصّل في الدورة', 'اتحصّل لحد آخر الدورة', 'رجع من الفاتورة', 'فاضل من الفاتورة', 'مكسب بعد ما الفاتورة رجعت'];
+
 export const HEADERS = [
   'تاريخ الشراء', 'الموديل (زي ما بيتكتب في الأوردر)', 'سعر القطعة جملة', 'العدد', 'إجمالي الفاتورة',
-  'اتباع منه (تلقائي)', 'فلوس رجعتلك', 'فاضل في المخزن', 'قيمة المخزون', 'نسبة اللي رجع', 'آخر بيعة',
+  'اتباع منه (تلقائي)', 'جملة اللي اتباع', 'فاضل في المخزن', 'قيمة المخزون (جملة)', 'نسبة اللي رجع من الفاتورة', 'آخر بيعة',
+  'اتحصّل من البيع (بعد الشحن)', 'فاضل من الفاتورة', 'مكسب بعد ما الفاتورة رجعت', 'الفاتورة رجعت يوم',
 ];
 
-// Formulas for purchase row r (columns E, G, H, I, J).
+// Formulas for purchase row r (columns E, G, H, I, J, M, N).
 export const rowFormulas = (r) => ({
   E: `=IF(D${r}="","",C${r}*D${r})`,
   G: `=IF(D${r}="","",MIN(N(F${r}),D${r})*C${r})`,
   H: `=IF(D${r}="","",MAX(0,D${r}-N(F${r})))`,
   I: `=IF(D${r}="","",H${r}*C${r})`,
-  J: `=IF(N(E${r})=0,"",G${r}/E${r})`,
+  J: `=IF(N(E${r})=0,"",MIN(N(L${r}),E${r})/E${r})`,
+  M: `=IF(D${r}="","",MAX(0,E${r}-N(L${r})))`,
+  N: `=IF(D${r}="","",MAX(0,N(L${r})-E${r}))`,
 });

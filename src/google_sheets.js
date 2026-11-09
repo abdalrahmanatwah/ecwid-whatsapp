@@ -99,6 +99,16 @@ export async function getFormulas(spreadsheetId, range) {
   return data.values || [];
 }
 
+// Computed values without display formatting: numbers stay numbers, dates are serials.
+export async function getRawValues(spreadsheetId, range) {
+  const data = await call('GET', `${API}/${spreadsheetId}/values/${enc(range)}?valueRenderOption=UNFORMATTED_VALUE`);
+  return data.values || [];
+}
+
+export async function clearValues(spreadsheetId, range) {
+  return call('POST', `${API}/${spreadsheetId}/values/${enc(range)}:clear`, {});
+}
+
 // Writes values/formulas exactly as if typed into the UI.
 export async function updateValues(spreadsheetId, range, values) {
   return call('PUT', `${API}/${spreadsheetId}/values/${enc(range)}?valueInputOption=USER_ENTERED`, { values });
