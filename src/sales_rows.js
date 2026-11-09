@@ -16,14 +16,14 @@ export const BRANDS = ['ASICS', 'ADIDAS', 'NIKE', 'ON', 'OTHER'];
 
 // Order matters: the first pattern that matches a segment wins.
 const BRAND_PATTERNS = [
-  ['ASICS', /\basics\b/i],
+  ['ASICS', /\basics\b|\bascis\b|\basisc\b|اسيكس|أسيكس/i],
   ['ADIDAS', /\badidas\b|\badizero\b|\by-3\b|\bterrex\b|\bhyperboost\b|\bultraboost\b/i],
-  ['NIKE', /\bnike\b|\bvomero\b|\bpegasus\b/i],
+  ['NIKE', /\bnike|nikecourt|\bvomero\b|\bpegasus\b|\bvapor\b|نايك/i],
   ['ON', /\bon running\b|\bon cloud|\bcloud ?tilt\b|\bcloudrock\b|\bcloudmonster\b|\bcloudsurfer\b|\broger\b|\bon fire\b|^\s*on\s+(the\s+)?(roger|cloud|fire)/i],
-  ['OTHER', /\breebok\b|north face|\bbrooks\b|new balance|\btimberland\b|\bpuma\b|\bskechers\b|\bhoka\b|\bsaucony\b|\bmizuno\b|\bunder armour\b/i],
+  ['OTHER', /\breebok\b|\brebook\b|north face|\bbrooks\b|new balance|\btimberland\b|motion access|\bpuma\b|\bskechers\b|\bhoka\b|\bsaucony\b|\bmizuno\b|\bunder armour\b|\blacoste\b|\bcolumbia\b|\bhead\b|\bbabolat\b|\bwilson\b|\byonex\b|\bjoma\b|\bbullpadel\b/i],
 ];
 
-const NON_SHOE = /tennis bag|\bbag\b|شنط|backpack|\bsocks?\b|شراب/i;
+const NON_SHOE = /tennis ba+g|\bbag\b|شنط|backpack|\bsocks?\b|شراب|مضرب|racket|t-?\s?shirts?|تيشيرت/i;
 const INSOLE = /insole|فرش/i;
 
 // Sizes are always 35+, so any count above this is a size, not an insole count.
@@ -58,7 +58,7 @@ export function countInsoles(desc) {
 // ("40½ / 40"), so that one is not a split point.
 export function splitItems(desc) {
   return String(desc || '')
-    .split(/\s*\/\/\s*|\s+\+\s+|,\s+(?=[A-Za-z])/)
+    .split(/\s*\/\/\s*|\s*&&\s*|\s+\+\s+|,\s+(?=[A-Za-z])/)
     .map((s) => s.trim())
     .filter(Boolean);
 }
@@ -224,6 +224,7 @@ export function normalizeQp(o) {
 // ---- Classification ------------------------------------------------------------
 
 const MIN_PAIR_PRICE = 1700;
+const ONE_PAIR_MAX = 4500; // up to this, two pairs listed with one paid = one pair kept
 
 // Short carrier descriptions like "on fire 44" are ON The Roger Pro; spell the
 // model out so the sheet's supplier section (which counts "roger") sees it.
@@ -249,9 +250,17 @@ function reviewOrSale(n, priceTable) {
     return { action: 'review', reason: what, ...base };
   }
 
-  const partialNote = n.carrier === 'qp' && /مرتجع|جزئي|بدل/.test(n.note);
-  if ((shoes.length > 1 && n.amount < MIN_PAIR_PRICE * shoes.length) || partialNote) {
-    return { action: 'review', reason: `الوصف فيه ${shoes.length} زوج والمحصّل ${n.amount}${n.note ? ' — ' + n.note : ''} (استلام جزئي؟)`, ...base };
+  // Two (or more) pairs sent — often two sizes to try — but about one pair's
+  // price collected: the customer kept one. Counted as one pair sold (the
+  // first listed), as done by hand in October. Too little for even one pair
+  // → review.
+  let partial = false;
+  if (shoes.length > 1 && n.amount <= ONE_PAIR_MAX) {
+    if (n.amount < MIN_PAIR_PRICE) {
+      return { action: 'review', reason: `الوصف فيه ${shoes.length} زوج والمحصّل ${n.amount}${n.note ? ' — ' + n.note : ''} (استلام جزئي؟)`, ...base };
+    }
+    shoes.splice(1);
+    partial = true;
   }
 
   const insoles = countInsoles(n.description);
@@ -268,6 +277,7 @@ function reviewOrSale(n, priceTable) {
   const notes = [];
   if (n.carrier === 'bosta' && !(n.fee > 0)) notes.push('شحن تقديري');
   if (newModels.length) notes.push('الجملة من الافتراضات (موديل جديد)');
+  if (partial) notes.push('اتبعت أكتر من زوج والمحصّل زوج واحد — محسوب زوج');
 
   return {
     action: 'sale',
