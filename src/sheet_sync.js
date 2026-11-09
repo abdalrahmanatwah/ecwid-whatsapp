@@ -357,36 +357,33 @@ function cairoToday() {
 // the current month's tab (and last month's during its first 3 days): rows
 // added before the fee was known, or before actual fees were read at all.
 async function backfillBostaFees(tabs, state, dryRun) {
-  const today = cairoToday();
-  const keys = [monthKey(today)];
-  if (Number(today.slice(8, 10)) <= 3) {
-    const [y, m] = today.split('-').map(Number);
-    keys.push(m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`);
-  }
-  const out = { updated: 0, pending: 0 };
-  for (const key of keys) {
-    const tab = findMonthTab(tabs, key);
-    if (!tab) continue;
+  // Every month tab, newest first: rows still on the estimate get Bosta's
+  // actual fee (reads are capped per run, so older months fill in over a few
+  // hours; fees are cached once known).
+  const items = [];
+  for (const { tab } of monthTabsOf(tabs)) {
     const layout = await readLayout(tab.title);
     const last = layout.total - 1;
     if (last < FIRST_DATA_ROW) continue;
     const rows = await sheets.getFormulas(SHEET_ID, `${q(tab.title)}!A${FIRST_DATA_ROW}:Q${last}`);
-    const items = [];
     rows.forEach((row, i) => {
       const id = String(row?.[16] || '');
       const g = String(row?.[6] ?? '');
-      if (id.startsWith('bosta:') && g.includes('$B$9')) items.push({ id, carrier: 'bosta', fee: null, r: FIRST_DATA_ROW + i, note: String(row?.[10] || '') });
+      if (id.startsWith('bosta:') && g.includes('$B$9')) {
+        items.push({ id, carrier: 'bosta', fee: null, tab: tab.title, r: FIRST_DATA_ROW + i, note: String(row?.[10] || '') });
+      }
     });
-    if (!items.length) continue;
-    await fillBostaFees(items, state);
-    for (const it of items) {
-      if (!(it.fee > 0)) { out.pending++; continue; }
-      out.updated++;
-      if (dryRun) continue;
-      const note = it.note.replace(/شحن تقديري\s*(·\s*)?/, '').trim();
-      await sheets.updateValues(SHEET_ID, `${q(tab.title)}!G${it.r}`, [[it.fee]]);
-      if (note !== it.note) await sheets.updateValues(SHEET_ID, `${q(tab.title)}!K${it.r}`, [[note]]);
-    }
+  }
+  const out = { updated: 0, pending: 0 };
+  if (!items.length) return out;
+  await fillBostaFees(items, state);
+  for (const it of items) {
+    if (!(it.fee > 0)) { out.pending++; continue; }
+    out.updated++;
+    if (dryRun) continue;
+    const note = it.note.replace(/شحن تقديري\s*(·\s*)?/, '').trim();
+    await sheets.updateValues(SHEET_ID, `${q(it.tab)}!G${it.r}`, [[it.fee]]);
+    if (note !== it.note) await sheets.updateValues(SHEET_ID, `${q(it.tab)}!K${it.r}`, [[note]]);
   }
   return out;
 }
@@ -400,6 +397,15 @@ async function syncAdSpend(tabs, dryRun) {
   if (Number(today.slice(8, 10)) <= 3) {
     const [y, m] = today.split('-').map(Number);
     keys.push(m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`);
+  }
+  // Plus any older month whose ad-spend cell hasn't been filled from Meta yet
+  // (e.g. months added by hand from carrier exports).
+  for (const { tab, key } of monthTabsOf(tabs)) {
+    if (keys.includes(key)) continue;
+    const layout = await readLayout(tab.title);
+    if (!layout.ads) continue;
+    const [[cur = ''] = []] = await sheets.getFormulas(SHEET_ID, `${q(tab.title)}!F${layout.ads}`);
+    if (!/^=\d+\*\(1\+/.test(String(cur))) keys.push(key);
   }
   const out = {};
   for (const key of keys) {

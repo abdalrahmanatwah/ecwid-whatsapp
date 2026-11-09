@@ -60,9 +60,26 @@ test('zero collection, non-shoes and unclear descriptions go to review, not the 
   assert.equal(classify(bosta({ description: 'Comfort Foam Insole', cod: 350 }), PRICES).action, 'review');
 });
 
-test('two pairs listed but one pair paid → review as a partial delivery', () => {
+test('two pairs listed but one pair paid → one pair sold; too little → review', () => {
   const c = classify(qp({ total_amount: 2900, shipment_contents: 'asics 43 / on cloud 43', status_note: 'حسابه 2900ومرتجع' }), PRICES);
-  assert.equal(c.action, 'review');
+  assert.equal(c.action, 'sale');
+  assert.equal(c.brand, 'ASICS');
+  assert.equal(c.costs.length, 1);
+  assert.match(c.note, /محسوب زوج/);
+  assert.equal(classify(qp({ total_amount: 3600, shipment_contents: 'ASICS White Green 37/38 && ASICS White Black 38' }), PRICES).costs.length, 1);
+  assert.equal(classify(qp({ total_amount: 150, shipment_contents: 'asics 43 // nike 44' }), PRICES).action, 'review');
+  assert.equal(classify(qp({ total_amount: 6800, shipment_contents: 'asics 43 && nike 44' }), PRICES).costs.length, 2);
+});
+
+test('brands written different ways; rackets and t-shirts are not shoes', async () => {
+  const { detectBrand } = await import('../src/sales_rows.js');
+  assert.equal(detectBrand('NikeCourt Air Zoom Vapor 11 Electric Size: 38'), 'NIKE');
+  assert.equal(detectBrand('شوز اسيكس بوص 42'), 'ASICS');
+  assert.equal(detectBrand('ascis red size 43.5'), 'ASICS');
+  assert.equal(detectBrand('Lacoste Tech Point White - Blue Size: 42'), 'OTHER');
+  assert.equal(detectBrand('Columbia Outdoor BOA Beige Size: 45'), 'OTHER');
+  assert.equal(classify(bosta({ description: 'مضرب البادل', cod: 5650 }), PRICES).action, 'review');
+  assert.equal(classify(bosta({ description: '3 T-shirts', cod: 1850 }), PRICES).action, 'review');
 });
 
 test('refused and returned shipments are counted as returns by their creation date', () => {
