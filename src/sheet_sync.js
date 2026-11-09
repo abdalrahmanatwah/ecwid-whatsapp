@@ -295,8 +295,10 @@ async function writeReturns(counts, bostaComplete, qpFresh, costs = {}) {
     if (bostaComplete && bosta !== Number(prev[1])) await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!B${r}`, [[bosta]]);
     // Only overwrite QP's count when the QP scraper has synced recently.
     if (qpFresh && qp !== Number(prev[2])) await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!C${r}`, [[qp]]);
+    // Never replace a month's cost with one built from fewer returns (older
+    // months were filled from carrier exports and only partly seen here).
     const cost = costs[key];
-    if (cost && (cost.total !== Number(prev[5]) || cost.priced !== Number(prev[7]))) {
+    if (cost && cost.priced >= (Number(prev[7]) || 0) && (cost.total !== Number(prev[5]) || cost.priced !== Number(prev[7]))) {
       await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!F${r}:H${r}`, [[cost.total, null, cost.priced]]);
     }
     await sheets.updateValues(SHEET_ID, `${q(RETURNS_TAB)}!E${r}`, [[stamp]]);
