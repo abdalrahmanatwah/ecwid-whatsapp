@@ -18,6 +18,7 @@ import { restockOrder } from './ecwid_tracking.js';
 import { store } from './store.js';
 import { notifyMerchant } from './notify.js';
 import { sendTemplate } from './whatsapp.js';
+import { markAuto, noteSent, sentRecently } from './auto_marks.js';
 
 const ENABLED = String(process.env.QP_ECWID_SYNC ?? 'true').toLowerCase() !== 'false';
 const STATE_FILE = process.env.QP_ECWID_FILE || '/var/data/qp_ecwid.json';
@@ -68,9 +69,14 @@ async function messageCustomers(state, dryRun) {
   for (const m of todo) {
     if (!m.to) { result.noNumber.push(m.serial); if (!dryRun) state.messaged = { ...(state.messaged || {}), [m.serial]: { kind: m.kind, skipped: 'no phone', at: new Date().toISOString() } }; continue; }
     if (!m.template) { result.noTemplate.push(m.serial); continue; } // retried once the template is set
+    if (sentRecently(m.to, m.template)) {
+      if (!dryRun) state.messaged = { ...(state.messaged || {}), [m.serial]: { kind: m.kind, to: m.to, skipped: 'sent recently', at: new Date().toISOString() } };
+      continue;
+    }
     if (dryRun) { result.sent.push({ serial: m.serial, kind: m.kind, to: m.to }); continue; }
     try {
       await sendTemplate(m.to, m.template, LANG);
+      noteSent(m.to, m.template);
       result.sent.push({ serial: m.serial, kind: m.kind, to: m.to });
       state.messaged = { ...(state.messaged || {}), [m.serial]: { kind: m.kind, to: m.to, at: new Date().toISOString() } };
     } catch (e) {
@@ -198,6 +204,7 @@ export async function runQpEcwidSync({ force = false, dryRun = false } = {}) {
             try {
               for (const [i, o] of m.orders.entries()) {
                 if (out.kind === 'returned') await restockOrder(ids[i]);
+                markAuto(ids[i], out.kind);
                 await updateOrder(ids[i], body);
                 o.fulfillmentStatus = body.fulfillmentStatus; // don't match it again this run
                 o.paymentStatus = body.paymentStatus;

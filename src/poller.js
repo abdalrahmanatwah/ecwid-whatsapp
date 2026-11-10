@@ -17,6 +17,7 @@ import { autoShipOrder } from './auto_ship.js';
 import { notifyMerchant } from './notify.js';
 import { maybeRunSheetSync } from './sheet_sync.js';
 import { maybeRunQpEcwidSync } from './qp_ecwid.js';
+import { maybeRunEcwidManualMessages } from './ecwid_manual_msgs.js';
 
 const COUNTRY = process.env.DEFAULT_COUNTRY_CODE || '20';
 const OVERLAP_SEC = 120;            // re-scan a little into the past when discovering new orders
@@ -176,6 +177,13 @@ async function pollOnce() {
     await maybeRunQpEcwidSync();
   } catch (err) {
     console.error('[poll] QP → Ecwid step failed:', err.message);
+  }
+
+  // 6b) Orders closed by hand on Ecwid → the same customer message (every 10 min).
+  try {
+    await maybeRunEcwidManualMessages();
+  } catch (err) {
+    console.error('[poll] Ecwid manual messages step failed:', err.message);
   }
 
   // 7) Sales sheet: delivered Bosta/QP orders → Google Sheet (self-throttled, hourly).

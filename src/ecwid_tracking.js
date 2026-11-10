@@ -14,6 +14,7 @@
 import { getOrder, updateOrder, adjustInventory } from './ecwid.js';
 import { getDeliveryState, bostaConfigured } from './bosta.js';
 import { sendTemplate, sendTemplateWithButtons } from './whatsapp.js';
+import { markAuto, noteSent } from './auto_marks.js';
 import { normalizePhone } from './phone.js';
 import { store } from './store.js';
 import { notifyMerchant } from './notify.js';
@@ -119,7 +120,7 @@ async function trySend(customer, template, lang, orderId) {
     console.warn(`[track] message NOT sent for ${orderId}: ${!template ? 'template env var is empty' : 'no customer number on the order'}`);
     return false;
   }
-  try { await sendTemplate(customer, template, lang); return true; }
+  try { await sendTemplate(customer, template, lang); noteSent(customer, template); return true; }
   catch (e) { console.warn(`[track] message send failed for ${orderId} (template ${template}):`, e.message); return false; }
 }
 
@@ -317,6 +318,7 @@ export async function trackFromEcwid() {
 
         const customer = rec.repliedBy || rec.to;
         if (isDelivered(st.value)) {
+          markAuto(rec.orderId, 'delivered');
           try { await updateOrder(rec.orderId, { fulfillmentStatus: DELIVERED_STATUS, paymentStatus: PAID_STATUS }); }
           catch (e) { console.warn(`[track] couldn't set Ecwid ${DELIVERED_STATUS} for ${rec.orderId}:`, e.message); }
           const offerSent = await trySend(customer, DELIVERED_TEMPLATE, LANG, rec.orderId);
@@ -327,12 +329,14 @@ export async function trackFromEcwid() {
           const askNow = REJECTED_TEMPLATE && customer && !rec.exceptionNotified;
           if (askNow) await trySend(customer, REJECTED_TEMPLATE, LANG, rec.orderId);
           await restockOrder(rec.orderId); // put the returned size(s) back into stock
+          markAuto(rec.orderId, 'returned');
           try { await updateOrder(rec.orderId, { fulfillmentStatus: RETURNED_STATUS, paymentStatus: CANCEL_STATUS }); }
           catch (e) { console.warn(`[track] couldn't set Ecwid ${RETURNED_STATUS} for ${rec.orderId}:`, e.message); }
           store.upsert(rec.orderId, { status: 'returned', exceptionNotified: true });
           await notifyMerchant(`↩️ Order ${rec.orderId} RETURNED — restocked items and marked Returned + Cancelled on Ecwid${askNow ? ', asked the customer the reason' : ''}.`);
           console.log(`[track] order ${rec.orderId} returned — restocked + Ecwid updated${askNow ? ' + reason message sent' : ''}`);
         } else if (isCanceled(st.value)) {
+          markAuto(rec.orderId, 'cancelled');
           try { await updateOrder(rec.orderId, { paymentStatus: CANCEL_STATUS, fulfillmentStatus: CANCEL_FULFILLMENT_STATUS }); }
           catch (e) { console.warn(`[track] couldn't set Ecwid cancelled for ${rec.orderId}:`, e.message); }
           store.upsert(rec.orderId, { status: 'shipment_canceled' });
@@ -389,7 +393,8 @@ export async function trackFromEcwid() {
             // delivers or returns the shipment we notice it: delivered offer,
             // return restock, etc. still work.
             if (postponedCount >= 2 && !rec.autoCancelled) {
-              try { await updateOrder(rec.orderId, { paymentStatus: CANCEL_STATUS, fulfillmentStatus: CANCEL_FULFILLMENT_STATUS }); }
+              markAuto(rec.orderId, 'cancelled');
+          try { await updateOrder(rec.orderId, { paymentStatus: CANCEL_STATUS, fulfillmentStatus: CANCEL_FULFILLMENT_STATUS }); }
               catch (e) { console.warn(`[track] couldn't set Ecwid cancelled for ${rec.orderId} after repeat postponement:`, e.message); }
 
               const cancelSent = await trySend(customer, POSTPONED_CANCEL_TEMPLATE, LANG, rec.orderId);
