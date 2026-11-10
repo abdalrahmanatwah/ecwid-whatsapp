@@ -13,6 +13,8 @@ import * as qpOrders from './qp_orders.js';
 import { handleCartButton } from './abandoned_carts.js';
 import { socialProofRouter } from './social_proof.js';
 import { sheetSyncRouter } from './sheet_sync.js';
+import { markAuto } from './auto_marks.js';
+import { runEcwidManualMessages, manualMessagesStatus } from './ecwid_manual_msgs.js';
 import { qpEcwidRouter } from './qp_ecwid.js';
 import { salesPageRouter, pageUrl } from './sales_page.js';
 
@@ -62,6 +64,10 @@ app.get('/', (_req, res) => res.send('Ecwid → WhatsApp order confirmation: run
  * ------------------------------------------------------------------ */
 app.use('/dashboard/sheet-sync', requireAuth, sheetSyncRouter);
 app.get('/dashboard/sales-page-link', requireAuth, (_req, res) => res.json({ url: pageUrl() }));
+app.get('/dashboard/ecwid-messages/status', requireAuth, (_req, res) => res.json(manualMessagesStatus()));
+app.get('/dashboard/ecwid-messages/run', requireAuth, async (req, res) => {
+  try { res.json(await runEcwidManualMessages({ force: true, dryRun: req.query.dry === '1' })); } catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.use('/dashboard/qp-ecwid', requireAuth, qpEcwidRouter); // QP delivered → Ecwid Delivered + Paid
 app.use('/dashboard', requireAuth, dashboardRouter);
 app.get('/dashboard', requireAuth, (_req, res) => {
@@ -188,6 +194,7 @@ async function handleReply({ action, orderId, from }) {
       return;
     }
     // Cancel cleanly — including after a confirm (customer changed their mind).
+    markAuto(orderId, 'cancelled'); // the customer cancelled — no "why did you refuse" message
     await updateOrder(orderId, { paymentStatus: CANCEL_STATUS, fulfillmentStatus: CANCEL_FULFILLMENT_STATUS });
     store.upsert(orderId, { status: 'cancelled', repliedBy: from });
     await sendText(from, CANCEL_MESSAGE);
