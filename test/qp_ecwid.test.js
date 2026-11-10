@@ -43,3 +43,18 @@ test('QP outcomes: delivered, refused/cancelled/returned, still in progress', ()
   assert.equal(qpOutcome(qp({ status: 'Pending', collected: null })), null);
   assert.equal(qpOutcome(qp({ status: 'Undelivered', collected: null, returned: null, status_note: 'تاجيل غدا' })), null);
 });
+
+test('QP customers get the same messages as Bosta: offer when delivered, reason question when refused — once, from the start day', async () => {
+  const { messagesToSend, qpCustomerNumber } = await import('../src/qp_ecwid.js');
+  assert.equal(qpCustomerNumber('01012345678 / 01122223333'), '201012345678');
+  assert.equal(qpCustomerNumber('+20 101 234 5678'), '201012345678');
+  assert.equal(qpCustomerNumber(''), null);
+  const orders = [
+    { serial: 1, status: 'Delivered', collected: '2026-11-10', total_amount: 3400, phone: '01012345678' },
+    { serial: 2, status: 'Undelivered', returned: '2026-11-10', status_note: 'رفض الاستلام', phone: '01122223333' },
+    { serial: 3, status: 'Delivered', collected: '2026-11-08', total_amount: 3400, phone: '01000000000' }, // before start
+    { serial: 4, status: 'Delivered', collected: '2026-11-10', total_amount: 3400, phone: '01055555555' }, // already messaged
+  ];
+  const out = messagesToSend(orders, { 4: { kind: 'delivered' } }, '2026-11-10');
+  assert.deepEqual(out.map((m) => [m.serial, m.kind, m.to]), [['1', 'delivered', '201012345678'], ['2', 'returned', '201122223333']]);
+});
