@@ -17,6 +17,7 @@ import { searchOrders, updateOrder } from './ecwid.js';
 import { restockOrder } from './ecwid_tracking.js';
 import { store } from './store.js';
 import { notifyMerchant } from './notify.js';
+import { sendTemplate } from './whatsapp.js';
 
 const ENABLED = String(process.env.QP_ECWID_SYNC ?? 'true').toLowerCase() !== 'false';
 const STATE_FILE = process.env.QP_ECWID_FILE || '/var/data/qp_ecwid.json';
@@ -30,6 +31,56 @@ const RETURNED_STATUS = process.env.RETURNED_FULFILLMENT_STATUS || 'RETURNED';
 const CANCEL_STATUS = process.env.CANCEL_PAYMENT_STATUS || 'CANCELLED';
 const CANCEL_FULFILLMENT_STATUS = process.env.CANCEL_FULFILLMENT_STATUS || 'WILL_NOT_DELIVER';
 const CLOSED_FULFILLMENT = new Set([DELIVERED_STATUS, RETURNED_STATUS, CANCEL_FULFILLMENT_STATUS]);
+
+// Customer WhatsApp messages for QP outcomes — the same templates Bosta orders
+// get: DELIVERED_TEMPLATE_NAME (the offer) when delivered, REJECTED_TEMPLATE_NAME
+// (ask the reason) when refused / returned. Sent once per QP order, only for
+// outcomes on or after QP_MESSAGES_START (so turning it on doesn't message
+// last week's customers).
+const MESSAGES_ENABLED = String(process.env.QP_CUSTOMER_MESSAGES ?? 'true').toLowerCase() !== 'false';
+const MESSAGES_START = process.env.QP_MESSAGES_START || '2026-11-10';
+const DELIVERED_TEMPLATE = process.env.DELIVERED_TEMPLATE_NAME || '';
+const REJECTED_TEMPLATE = process.env.REJECTED_TEMPLATE_NAME || '';
+const LANG = process.env.WHATSAPP_TEMPLATE_LANG || 'ar';
+
+// The customer's WhatsApp number from a QP order: first Egyptian number, as 20XXXXXXXXXX.
+export function qpCustomerNumber(phone) {
+  const [first] = phoneKeys(phone);
+  return first ? `20${first}` : null;
+}
+
+// QP orders whose customer should get a message now.
+export function messagesToSend(qpOrders, messaged = {}, start = MESSAGES_START) {
+  const out = [];
+  for (const o of qpOrders) {
+    const res = qpOutcome(o);
+    if (!res || res.day < start || messaged[String(o.serial)]) continue;
+    const to = qpCustomerNumber(o.phone);
+    out.push({ serial: String(o.serial), kind: res.kind, to, template: res.kind === 'delivered' ? DELIVERED_TEMPLATE : REJECTED_TEMPLATE });
+  }
+  return out;
+}
+
+async function messageCustomers(state, dryRun) {
+  if (!MESSAGES_ENABLED) return { skipped: 'QP_CUSTOMER_MESSAGES=false' };
+  const todo = messagesToSend(allQpOrders(), state.messaged || {});
+  const result = { sent: [], failed: [], noNumber: [], noTemplate: [] };
+  for (const m of todo) {
+    if (!m.to) { result.noNumber.push(m.serial); if (!dryRun) state.messaged = { ...(state.messaged || {}), [m.serial]: { kind: m.kind, skipped: 'no phone', at: new Date().toISOString() } }; continue; }
+    if (!m.template) { result.noTemplate.push(m.serial); continue; } // retried once the template is set
+    if (dryRun) { result.sent.push({ serial: m.serial, kind: m.kind, to: m.to }); continue; }
+    try {
+      await sendTemplate(m.to, m.template, LANG);
+      result.sent.push({ serial: m.serial, kind: m.kind, to: m.to });
+      state.messaged = { ...(state.messaged || {}), [m.serial]: { kind: m.kind, to: m.to, at: new Date().toISOString() } };
+    } catch (e) {
+      result.failed.push({ serial: m.serial, kind: m.kind, to: m.to, error: e.message });
+      // a number that isn't on WhatsApp etc. — don't retry forever
+      state.messaged = { ...(state.messaged || {}), [m.serial]: { kind: m.kind, to: m.to, failed: e.message, at: new Date().toISOString() } };
+    }
+  }
+  return result;
+}
 
 function loadState() {
   try {
@@ -172,12 +223,25 @@ export async function runQpEcwidSync({ force = false, dryRun = false } = {}) {
       }
     }
 
+    try {
+      result.customerMessages = await messageCustomers(state, dryRun);
+    } catch (e) {
+      result.customerMessages = { error: e.message };
+    }
+
     state.lastRunAt = result.at;
     state.lastResult = result;
 
     if (!dryRun) {
       const lines = [];
       if (result.delivered.length) lines.push(`✅ Delivered + Paid على Ecwid: ${result.delivered.flatMap((x) => x.ecwid.map((e) => `#${e}`)).join('، ')}`);
+      const cm = result.customerMessages || {};
+      if (cm.sent?.length) {
+        const d = cm.sent.filter((x) => x.kind === 'delivered').length;
+        const r = cm.sent.length - d;
+        lines.push(`💬 رسايل لعملاء QP: ${d ? `${d} اتسلّموا (العرض)` : ''}${d && r ? ' · ' : ''}${r ? `${r} رفضوا/رجعوا (سؤال عن السبب)` : ''}`);
+      }
+      if (cm.failed?.length) lines.push(`⚠️ رسايل ماوصلتش لعملاء QP: ${cm.failed.map((x) => `${x.serial} (${x.to})`).join('، ')}`);
       if (result.returned.length) lines.push(`↩️ Returned + Cancelled على Ecwid (واترجع المخزون): ${result.returned.flatMap((x) => x.ecwid.map((e) => `#${e}`)).join('، ')}`);
       const fresh = result.unmatched.filter((u) => u.kind && !state.notified?.[u.serial]);
       if (fresh.length) {
@@ -212,7 +276,7 @@ export const qpEcwidRouter = Router();
 
 qpEcwidRouter.get('/status', (_req, res) => {
   const s = loadState();
-  res.json({ enabled: ENABLED, start: START, lastRunAt: s.lastRunAt, lastResult: s.lastResult, lastError: s.lastError || null, handled: Object.keys(s.handled || {}).length });
+  res.json({ enabled: ENABLED, start: START, customerMessages: { enabled: MESSAGES_ENABLED, start: MESSAGES_START, deliveredTemplate: DELIVERED_TEMPLATE || null, rejectedTemplate: REJECTED_TEMPLATE || null, sent: Object.keys(s.messaged || {}).length }, lastRunAt: s.lastRunAt, lastResult: s.lastResult, lastError: s.lastError || null, handled: Object.keys(s.handled || {}).length });
 });
 
 // ?dry=1 shows the matches without changing Ecwid.
