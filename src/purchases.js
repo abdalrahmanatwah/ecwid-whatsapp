@@ -157,3 +157,33 @@ export const rowFormulas = (r) => ({
   M: `=IF(D${r}="","",MAX(0,E${r}-N(L${r})-N(Q${r})*N(R${r})))`,
   N: `=IF(D${r}="","",MAX(0,N(L${r})+N(Q${r})*N(R${r})-E${r}))`,
 });
+
+// Stock sitting too long: purchases older than `days` days with pairs still
+// unsold (not counting pairs sold off cheap). Alerted once, then every
+// `repeatDays` while it stays that way.
+export const STALE_DAYS = Number(process.env.STOCK_STALE_DAYS || 60);
+export const STALE_REPEAT_DAYS = Number(process.env.STOCK_STALE_REPEAT_DAYS || 7);
+const dayDiff = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
+
+// items: [{ key, date, qty, price, sold, liquidated, last }]; alerted: { [key|date]: isoDate }
+export function staleStock(items, today, alerted = {}, { days = STALE_DAYS, repeatDays = STALE_REPEAT_DAYS } = {}) {
+  const out = [];
+  for (const it of items) {
+    if (!it.date) continue;
+    const age = dayDiff(it.date, today);
+    const left = Math.max(0, it.qty - (it.sold || 0) - (it.liquidated || 0));
+    if (age < days || left <= 0) continue;
+    const id = `${it.key}|${it.date}`;
+    const last = alerted[id];
+    const due = !last || dayDiff(String(last).slice(0, 10), today) >= repeatDays;
+    out.push({ id, name: String(it.key).split('|')[0].trim(), date: it.date, age, left, qty: it.qty, value: left * (it.price || 0), last: it.last || null, due });
+  }
+  return out;
+}
+
+export function staleMessage(list) {
+  const dm = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
+  const lines = list.map((s) => `• ${s.name} — من ${dm(s.date)} (${s.age} يوم) — فاضل ${s.left} من ${s.qty} (قيمتها ${s.value.toLocaleString('en-US')})${s.last ? ` — آخر بيعة ${dm(s.last)}` : ' — مااتباعش منه'}`);
+  const total = list.reduce((a, s) => a + s.value, 0);
+  return `⏰ بضاعة قاعدة أكتر من شهرين من يوم شراها:\n${lines.join('\n')}\nالإجمالي ${total.toLocaleString('en-US')} جنيه بسعر الجملة — فكّر في عرض أو تصفية. (لو صفّيت، اكتب العدد والسعر والتاريخ في تاب المشتريات)`;
+}

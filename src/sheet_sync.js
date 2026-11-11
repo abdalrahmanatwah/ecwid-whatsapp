@@ -29,7 +29,7 @@ import { getOrder } from './ecwid.js';
 import {
   normalizeBosta, normalizeQp, classify, privateSale, saleRowValues, reviewRowValues, monthKey, bostaFee, bostaCustomerPaid, returnCost,
 } from './sales_rows.js';
-import { PURCHASES_TAB, FIRST_ROW as P_FIRST, parseDate, serialToDate, allocate, rowFormulas, cashCycles, adjustUnits, CYCLES_TAB, CYCLE_MONTHS, CYCLE_HEADERS } from './purchases.js';
+import { PURCHASES_TAB, FIRST_ROW as P_FIRST, parseDate, serialToDate, allocate, rowFormulas, cashCycles, adjustUnits, staleStock, staleMessage, CYCLES_TAB, CYCLE_MONTHS, CYCLE_HEADERS } from './purchases.js';
 
 const SHEET_ID = process.env.SALES_SHEET_ID || '';
 const ENABLED = String(process.env.SHEET_SYNC ?? 'true').toLowerCase() !== 'false';
@@ -436,7 +436,7 @@ async function syncPurchases(tabs, dryRun) {
   if (!tabs.some((t) => t.title === PURCHASES_TAB)) return { skipped: `no "${PURCHASES_TAB}" tab` };
   const today = cairoToday();
   const year = Number(today.slice(0, 4));
-  const rows = await sheets.getFormulas(SHEET_ID, `${q(PURCHASES_TAB)}!A${P_FIRST}:P500`);
+  const rows = await sheets.getFormulas(SHEET_ID, `${q(PURCHASES_TAB)}!A${P_FIRST}:S500`);
   const purchases = rows
     .map((r, i) => ({ row: P_FIRST + i, date: parseDate(r?.[0], year), key: String(r?.[1] || '').trim(), price: Number(r?.[2]) || 0, qty: Number(r?.[3]) || 0, raw: r || [] }))
     .filter((p) => p.key && p.qty > 0);
@@ -495,7 +495,23 @@ async function syncPurchases(tabs, dryRun) {
     await sheets.clearValues(SHEET_ID, `${q(CYCLES_TAB)}!A1:K2000`);
     await sheets.updateValues(SHEET_ID, `${q(CYCLES_TAB)}!A1:K${cycleRows.length + 1}`, [CYCLE_HEADERS, ...cycleRows]);
   }
-  return { purchases: purchases.length, salesScanned: sales.length, summary, cellsWritten: dryRun ? 0 : writes.length, cycles: cycleRows.length };
+  // Stock sitting more than two months → WhatsApp alert (once, then weekly).
+  const stale = staleStock(purchases.map((p) => ({
+    key: p.key, date: p.date, qty: p.qty, price: p.price,
+    sold: typeof p.raw[15] === 'number' ? p.raw[15] : result[p.row].sold,
+    liquidated: Number(p.raw[16]) || 0, last: result[p.row].last,
+  })), today, loadState().stockAlerts || {});
+  const due = stale.filter((x) => x.due);
+  if (due.length && !dryRun) {
+    try {
+      await notifyMerchant(staleMessage(due));
+      const st = loadState();
+      st.stockAlerts = { ...(st.stockAlerts || {}), ...Object.fromEntries(due.map((x) => [x.id, today])) };
+      saveState(st);
+    } catch (e) { console.warn('[sheet] stale stock alert failed:', e.message); }
+  }
+
+  return { purchases: purchases.length, salesScanned: sales.length, summary, stale: stale.map(({ name, age, left, value, due: d }) => ({ name, age, left, value, alertedNow: d && !dryRun })), cellsWritten: dryRun ? 0 : writes.length, cycles: cycleRows.length };
 }
 
 // ---- main ---------------------------------------------------------------------------
@@ -652,6 +668,8 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
     };
     state.lastRunAt = result.at;
     state.lastResult = result;
+    // syncPurchases saves its alert log itself — keep it.
+    state.stockAlerts = { ...(state.stockAlerts || {}), ...(loadState().stockAlerts || {}) };
     if (!dryRun) saveState(state);
 
     console.log(`[sheet] sync: +${added.length} sales, +${newReviews.length} for review, bosta via ${bostaSource}${dryRun ? ' (dry run)' : ''}`);
