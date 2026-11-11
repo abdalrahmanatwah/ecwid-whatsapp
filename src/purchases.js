@@ -146,12 +146,14 @@ export const HEADERS = [
 ];
 
 // Formulas for purchase row r (columns E, G, H, I, J, M, N).
+// Q = pairs sold off cheap (تصفية), R = price per pair, S = date: they leave
+// the stock, and their money counts toward paying back the invoice.
 export const rowFormulas = (r) => ({
   E: `=IF(D${r}="","",C${r}*D${r})`,
   G: `=IF(D${r}="","",MIN(N(F${r}),D${r})*C${r})`,
-  H: `=IF(D${r}="","",MAX(0,D${r}-N(F${r})))`,
+  H: `=IF(D${r}="","",MAX(0,D${r}-N(F${r})-N(Q${r})))`,
   I: `=IF(D${r}="","",H${r}*C${r})`,
-  J: `=IF(N(E${r})=0,"",MIN(N(L${r}),E${r})/E${r})`,
-  M: `=IF(D${r}="","",MAX(0,E${r}-N(L${r})))`,
-  N: `=IF(D${r}="","",MAX(0,N(L${r})-E${r}))`,
+  J: `=IF(N(E${r})=0,"",MIN(N(L${r})+N(Q${r})*N(R${r}),E${r})/E${r})`,
+  M: `=IF(D${r}="","",MAX(0,E${r}-N(L${r})-N(Q${r})*N(R${r})))`,
+  N: `=IF(D${r}="","",MAX(0,N(L${r})+N(Q${r})*N(R${r})-E${r}))`,
 });
