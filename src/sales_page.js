@@ -649,10 +649,11 @@ function renderPurchases() {
     const since = parseDMY(r[0]);
     const days = since ? Math.max(1, Math.round((Date.now() - since) / 864e5)) : null;
     const perWeek = days ? sold / days * 7 : 0;
-    const left = qty - sold;
+    const left = r[7] !== '' && r[7] != null ? num(r[7]) : qty - sold; // H = bought − sold − sold off
+    const ageDays = since ? Math.round((Date.now() - since) / 864e5) : 0;
     const cycles = (DATA.cycles || []).filter((c) => c[0] === name && c[1] === r[0]);
     return { name, date: r[0], price: num(r[2]), qty, cost, sold, left, stock: num(r[8]), last: r[10], collected, back, owe: Math.max(0, cost - collected), profit: Math.max(0, collected - cost), paidOn: r[14],
-      pctBack: cost ? back / cost * 100 : 0, perWeek, weeksLeft: perWeek > 0 ? left / perWeek : null, cycles, color: PCOLORS[i % PCOLORS.length] };
+      pctBack: cost ? back / cost * 100 : 0, stale: ageDays >= 60 && left > 0, ageDays, perWeek, weeksLeft: perWeek > 0 ? left / perWeek : null, cycles, color: PCOLORS[i % PCOLORS.length] };
   });
   const t = P.reduce((a, p) => ({ cost: a.cost + p.cost, qty: a.qty + p.qty, sold: a.sold + p.sold, back: a.back + p.back, profit: a.profit + p.profit, owe: a.owe + p.owe, left: a.left + p.left, stock: a.stock + p.stock }),
     { cost: 0, qty: 0, sold: 0, back: 0, profit: 0, owe: 0, left: 0, stock: 0 });
@@ -679,6 +680,7 @@ function renderPurchases() {
   out.push(h('section', { class: 'pgrid' }, P.map((p) => {
     const paid = p.owe === 0 && p.cost > 0;
     const tag = paid ? ['good', 'الفاتورة رجعت ✓'] : p.pctBack >= 50 ? ['mid', 'رجع أكتر من النص'] : ['bad', 'لسه بدري'];
+    const staleTag = p.stale ? h('span', { class: 'tag bad', style: 'margin-inline-start:6px' }, '⏰ قاعد ' + p.ageDays + ' يوم') : null;
     const ringC = paid ? 'var(--good)' : p.pctBack >= 50 ? 'var(--accent)' : 'var(--bad)';
     const eta = p.left === 0 ? 'البضاعة خلصت' : p.weeksLeft == null ? 'لسه مااتباعش منه' : p.weeksLeft < 1.5 ? 'البضاعة هتخلص خلال أسبوع تقريباً' : 'البضاعة هتخلص في حوالي ' + Math.round(p.weeksLeft) + ' أسبوع';
     const today = Date.now();
@@ -696,7 +698,7 @@ function renderPurchases() {
       })) : null;
     return h('div', { class: 'card pcard' },
       h('div', { class: 'top' },
-        h('div', {}, h('h3', {}, p.name), h('div', { class: 'when' }, 'من ', h('span', { class: 'num' }, p.date), ' · ', h('span', { class: 'num' }, fmt(p.qty)), ' زوج × ', h('span', { class: 'num' }, fmt(p.price))), h('div', { style: 'margin-top:6px' }, h('span', { class: 'tag ' + tag[0] }, tag[1]))),
+        h('div', {}, h('h3', {}, p.name), h('div', { class: 'when' }, 'من ', h('span', { class: 'num' }, p.date), ' · ', h('span', { class: 'num' }, fmt(p.qty)), ' زوج × ', h('span', { class: 'num' }, fmt(p.price))), h('div', { style: 'margin-top:6px' }, h('span', { class: 'tag ' + tag[0] }, tag[1]), staleTag)),
         h('div', { class: 'ring', style: '--p:' + p.pctBack.toFixed(1) + ';--c:' + ringC }, h('span', {}, h('span', { class: 'num', style: 'width:auto;height:auto;background:none' }, Math.round(p.pctBack) + '%')))),
       h('div', { class: 'pstats' },
         h('div', {}, h('small', {}, 'الفاتورة'), h('b', { class: 'num' }, fmt(p.cost))),

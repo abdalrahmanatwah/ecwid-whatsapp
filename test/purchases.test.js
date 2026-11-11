@@ -92,3 +92,18 @@ test('a hand count adjusts the money: extra pairs at the average, fewer pairs dr
   assert.equal(more[3].date, '2026-10-05');
   assert.equal(adjustUnits(u, null, '2026-11-09'), u);
 });
+
+test('stock older than two months with pairs left → alert once, then weekly', async () => {
+  const { staleStock, staleMessage } = await import('../src/purchases.js');
+  const items = [
+    { key: 'HOKA Speed', date: '2026-11-10', qty: 15, price: 1300, sold: 8, liquidated: 0, last: '2027-01-02' },
+    { key: 'Soul Stride', date: '2026-09-15', qty: 10, price: 950, sold: 10 }, // sold out
+    { key: 'Reebok Float | rebook', date: '2026-09-15', qty: 15, price: 900, sold: 8, liquidated: 7 }, // sold off
+    { key: 'Hyperboost', date: '2026-12-01', qty: 80, price: 1460, sold: 50 }, // too new
+  ];
+  const s = staleStock(items, '2027-01-10', {});
+  assert.deepEqual(s.map((x) => [x.name, x.age, x.left, x.value, x.due]), [['HOKA Speed', 61, 7, 9100, true]]);
+  assert.equal(staleStock(items, '2027-01-12', { 'HOKA Speed|2026-11-10': '2027-01-10' })[0].due, false);
+  assert.equal(staleStock(items, '2027-01-17', { 'HOKA Speed|2026-11-10': '2027-01-10' })[0].due, true);
+  assert.match(staleMessage(s), /HOKA Speed — من 10\/11 \(61 يوم\) — فاضل 7 من 15/);
+});
