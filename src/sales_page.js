@@ -12,6 +12,7 @@ import { randomBytes } from 'node:crypto';
 import { Router } from 'express';
 import * as sheets from './google_sheets.js';
 import { notifyMerchant } from './notify.js';
+import { buildPartnersData, PARTNERS_HTML } from './partners_page.js';
 
 const SHEET_ID = process.env.SALES_SHEET_ID || '';
 const SLUG_FILE = process.env.SALES_PAGE_FILE || '/var/data/sales_page.json';
@@ -65,7 +66,7 @@ export function createExtraLink(name = 'رابط إضافي') {
   data.extra = [...(data.extra || []), link];
   writeFile(data);
   const url = `${PUBLIC_URL}/s/${link.slug}`;
-  notifyMerchant(`🔗 لينك جديد لصفحة المبيعات (${link.name}):\n${url}\nاللينك الأصلي بتاعك لسه شغال زي ما هو.`).catch(() => {});
+  notifyMerchant(`🔗 لينك صفحة الشركاء (${link.name}) — بيظهر فيه نصيب كل شريك بس:\n${url}\nاللينك الأصلي بتاعك لسه شغال زي ما هو.`).catch(() => {});
   return { ...link, url };
 }
 export function revokeExtraLink(slug) {
@@ -77,9 +78,11 @@ export function revokeExtraLink(slug) {
 }
 // First boot after this change: make one extra link if none exists yet.
 export function ensureExtraLink() {
-  if (!extraLinks().length) createExtraLink('اللينك التاني');
+  if (!extraLinks().length) createExtraLink('الشركاء');
 }
 const isValidSlug = (s) => s === pageSlug() || extraLinks().some((l) => l.slug === s);
+// Extra links only ever get the partners' page and its data, never the full sales data.
+const isPartnerSlug = (s) => s !== pageSlug() && extraLinks().some((l) => l.slug === s);
 
 // "YYYY-MM" for a month tab title, or null.
 function monthKeyOf(title) {
@@ -180,7 +183,7 @@ salesPageRouter.get('/:slug/data.json', async (req, res) => {
   if (!isValidSlug(req.params.slug)) return res.status(404).end();
   try {
     res.set('Cache-Control', 'no-store');
-    res.json(await buildData());
+    res.json(isPartnerSlug(req.params.slug) ? await buildPartnersData() : await buildData());
   } catch (e) {
     console.error('[sales-page] data failed:', e.message);
     res.status(502).json({ error: 'تعذّر قراءة الشيت دلوقتي' });
@@ -191,7 +194,7 @@ salesPageRouter.get('/:slug', (req, res) => {
   if (!isValidSlug(req.params.slug)) return res.status(404).end();
   res.set('Cache-Control', 'no-store');
   res.set('X-Robots-Tag', 'noindex, nofollow');
-  res.type('html').send(PAGE_HTML);
+  res.type('html').send(isPartnerSlug(req.params.slug) ? PARTNERS_HTML : PAGE_HTML);
 });
 
 // The page: all markup, styles and script in one string. Data is rendered
