@@ -107,7 +107,7 @@ function render(d) {
       P.map((_, i) => h('td', { class: 'n' }, money(m.shares[i])))))),
     d.total ? h('tfoot', {}, h('tr', {}, h('td', {}, 'الإجمالي'), P.map((_, i) => h('td', { class: 'n' }, money(d.total[i]))))) : null);
   $('#app').replaceChildren(cards, h('div', { class: 'card' }, table),
-    h('p', { class: 'note' }, 'كل شهر بيبدأ من صفر يوم 1، والشهر الحالي بيتحدّث كل ساعة مع كل أوردر بيتسلّم. لو الشهر خسران، النصيب صفر.'),
+    h('p', { class: 'note' }, 'كل شهر بيبدأ من صفر يوم 1، والشهر الحالي بيتحدّث كل ساعة مع كل أوردر بيتسلّم.'),
     h('p', { class: 'updated' }, 'آخر تحديث: ' + new Date(d.updatedAt).toLocaleString('ar-EG')));
 }
 load();
