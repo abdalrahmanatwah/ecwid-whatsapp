@@ -35,7 +35,7 @@ export function pageSlug() {
   slugCache = randomBytes(15).toString('base64url');
   try {
     mkdirSync(dirname(SLUG_FILE), { recursive: true });
-    writeFileSync(SLUG_FILE, JSON.stringify({ slug: slugCache, createdAt: new Date().toISOString() }));
+    writeFileSync(SLUG_FILE, JSON.stringify({ ...readFile(), slug: slugCache, createdAt: new Date().toISOString() }));
     notifyMerchant(`📊 صفحة المبيعات جاهزة (من غير باسورد، اللينك ده ليك بس):\n${pageUrl()}`).catch(() => {});
   } catch (e) {
     console.warn('[sales-page] could not save slug:', e.message);
@@ -44,6 +44,42 @@ export function pageSlug() {
 }
 
 export const pageUrl = () => `${PUBLIC_URL}/s/${pageSlug()}`;
+
+// Extra private links to the same page (e.g. one to hand to a partner), so
+// the original link never has to be shared. Kept in the same file under
+// "extra"; each can be revoked on its own without touching the others.
+function readFile() {
+  try { return existsSync(SLUG_FILE) ? JSON.parse(readFileSync(SLUG_FILE, 'utf8')) : {}; } catch { return {}; }
+}
+function writeFile(data) {
+  mkdirSync(dirname(SLUG_FILE), { recursive: true });
+  writeFileSync(SLUG_FILE, JSON.stringify(data, null, 2));
+}
+export function extraLinks() {
+  return (readFile().extra || []).map((l) => ({ ...l, url: `${PUBLIC_URL}/s/${l.slug}` }));
+}
+export function createExtraLink(name = 'رابط إضافي') {
+  pageSlug();
+  const data = readFile();
+  const link = { name: String(name).slice(0, 60), slug: randomBytes(15).toString('base64url'), createdAt: new Date().toISOString() };
+  data.extra = [...(data.extra || []), link];
+  writeFile(data);
+  const url = `${PUBLIC_URL}/s/${link.slug}`;
+  notifyMerchant(`🔗 لينك جديد لصفحة المبيعات (${link.name}):\n${url}\nاللينك الأصلي بتاعك لسه شغال زي ما هو.`).catch(() => {});
+  return { ...link, url };
+}
+export function revokeExtraLink(slug) {
+  const data = readFile();
+  const before = (data.extra || []).length;
+  data.extra = (data.extra || []).filter((l) => l.slug !== slug);
+  if (data.extra.length !== before) writeFile(data);
+  return before - data.extra.length;
+}
+// First boot after this change: make one extra link if none exists yet.
+export function ensureExtraLink() {
+  if (!extraLinks().length) createExtraLink('اللينك التاني');
+}
+const isValidSlug = (s) => s === pageSlug() || extraLinks().some((l) => l.slug === s);
 
 // "YYYY-MM" for a month tab title, or null.
 function monthKeyOf(title) {
@@ -141,7 +177,7 @@ async function buildData() {
 export const salesPageRouter = Router();
 
 salesPageRouter.get('/:slug/data.json', async (req, res) => {
-  if (req.params.slug !== pageSlug()) return res.status(404).end();
+  if (!isValidSlug(req.params.slug)) return res.status(404).end();
   try {
     res.set('Cache-Control', 'no-store');
     res.json(await buildData());
@@ -152,7 +188,7 @@ salesPageRouter.get('/:slug/data.json', async (req, res) => {
 });
 
 salesPageRouter.get('/:slug', (req, res) => {
-  if (req.params.slug !== pageSlug()) return res.status(404).end();
+  if (!isValidSlug(req.params.slug)) return res.status(404).end();
   res.set('Cache-Control', 'no-store');
   res.set('X-Robots-Tag', 'noindex, nofollow');
   res.type('html').send(PAGE_HTML);

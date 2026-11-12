@@ -16,7 +16,7 @@ import { sheetSyncRouter } from './sheet_sync.js';
 import { markAuto } from './auto_marks.js';
 import { runEcwidManualMessages, manualMessagesStatus } from './ecwid_manual_msgs.js';
 import { qpEcwidRouter } from './qp_ecwid.js';
-import { salesPageRouter, pageUrl } from './sales_page.js';
+import { salesPageRouter, pageUrl, extraLinks, createExtraLink, revokeExtraLink, ensureExtraLink } from './sales_page.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -63,7 +63,11 @@ app.get('/', (_req, res) => res.send('Ecwid → WhatsApp order confirmation: run
  * Both the page and its API are behind Basic Auth (DASHBOARD_PASSWORD)*
  * ------------------------------------------------------------------ */
 app.use('/dashboard/sheet-sync', requireAuth, sheetSyncRouter);
-app.get('/dashboard/sales-page-link', requireAuth, (_req, res) => res.json({ url: pageUrl() }));
+app.get('/dashboard/sales-page-link', requireAuth, (_req, res) => res.json({ url: pageUrl(), extra: extraLinks() }));
+// New private link to the same sales page (?name=...), sent on WhatsApp.
+app.get('/dashboard/sales-page-link/new', requireAuth, (req, res) => res.json(createExtraLink(req.query.name || undefined)));
+// Turn off one extra link (?slug=...). The original link can't be revoked here.
+app.get('/dashboard/sales-page-link/revoke', requireAuth, (req, res) => res.json({ removed: revokeExtraLink(String(req.query.slug || '')) }));
 app.get('/dashboard/ecwid-messages/status', requireAuth, (_req, res) => res.json(manualMessagesStatus()));
 app.get('/dashboard/ecwid-messages/run', requireAuth, async (req, res) => {
   try { res.json(await runEcwidManualMessages({ force: true, dryRun: req.query.dry === '1' })); } catch (e) { res.status(500).json({ error: e.message }); }
@@ -237,6 +241,7 @@ async function handleReply({ action, orderId, from }) {
 
 app.listen(PORT, () => {
   pageUrl(); // creates the private sales-page link on first boot (sent on WhatsApp)
+  ensureExtraLink(); // and a second link to the same page (sent on WhatsApp)
   console.log(`Listening on :${PORT}`);
   const interval = Number(process.env.POLL_INTERVAL_SECONDS || 60);
   startPolling(interval);
