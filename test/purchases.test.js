@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { allocate, unitsInRow, parseDate, serialToDate } from '../src/purchases.js';
+import { allocate, unitsInRow, parseDate, serialToDate, speed } from '../src/purchases.js';
 
 test('dates as typed in the sheet', () => {
   assert.equal(parseDate('1/11', 2026), '2026-11-01');
@@ -106,4 +106,24 @@ test('stock older than two months with pairs left → alert once, then weekly', 
   assert.equal(staleStock(items, '2027-01-12', { 'HOKA Speed|2026-11-10': '2027-01-10' })[0].due, false);
   assert.equal(staleStock(items, '2027-01-17', { 'HOKA Speed|2026-11-10': '2027-01-10' })[0].due, true);
   assert.match(staleMessage(s), /HOKA Speed — من 10\/11 \(61 يوم\) — فاضل 7 من 15/);
+});
+
+test('model + colour keys need every part, in any order', () => {
+  const row = 'Adidas HYPERBOOST PRO 2 Running Shoe - Brown 2 Size: 44';
+  assert.equal(unitsInRow(row, 'Hyperboost & Brown', [0, 1, 0, 0, 0]), 1);
+  assert.equal(unitsInRow(row, 'Brown & Hyperboost', [0, 1, 0, 0, 0]), 1);
+  assert.equal(unitsInRow('Adidas HYPERBOOST PRO 2 - Red Black 43', 'Hyperboost & Brown', [0, 1, 0, 0, 0]), 0);
+  assert.equal(unitsInRow('ASICS METARISE 2 PARIS Safety Yellow Black 41', 'metarise & yellow | metarise & اصفر', [1, 0, 0, 0, 0]), 1);
+});
+
+test('sell speed and what to do', () => {
+  const t = '2026-11-13';
+  assert.equal(speed({ date: '2026-11-01', qty: 7, sold: 1 }, t).verdict, 'لسه بدري');
+  assert.equal(speed({ date: '2026-10-01', qty: 7, sold: 7 }, t).verdict, 'خلص — زوّد الكمية');
+  const fast = speed({ date: '2026-10-14', qty: 10, sold: 5 }, t);
+  assert.equal(fast.perMonth, 5);
+  assert.equal(fast.verdict, 'زوّد');
+  assert.equal(speed({ date: '2026-10-14', qty: 10, sold: 2 }, t).verdict, 'ماشي');
+  assert.equal(speed({ date: '2026-09-01', qty: 10, sold: 1 }, t).verdict, 'وقّف وصفّي');
+  assert.equal(speed({ date: '2026-09-01', qty: 10, sold: 1, cleared: 7 }, t).verdict, 'وقّف');
 });
