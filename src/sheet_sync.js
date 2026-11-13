@@ -29,7 +29,7 @@ import { getOrder } from './ecwid.js';
 import {
   normalizeBosta, normalizeQp, classify, privateSale, saleRowValues, reviewRowValues, monthKey, bostaFee, bostaCustomerPaid, returnCost,
 } from './sales_rows.js';
-import { PURCHASES_TAB, FIRST_ROW as P_FIRST, parseDate, serialToDate, allocate, rowFormulas, cashCycles, adjustUnits, staleStock, staleMessage, CYCLES_TAB, CYCLE_MONTHS, CYCLE_HEADERS } from './purchases.js';
+import { PURCHASES_TAB, FIRST_ROW as P_FIRST, parseDate, serialToDate, allocate, rowFormulas, speed, SPEED_HEADERS, cashCycles, adjustUnits, staleStock, staleMessage, CYCLES_TAB, CYCLE_MONTHS, CYCLE_HEADERS } from './purchases.js';
 
 const SHEET_ID = process.env.SALES_SHEET_ID || '';
 const ENABLED = String(process.env.SHEET_SYNC ?? 'true').toLowerCase() !== 'false';
@@ -436,7 +436,7 @@ async function syncPurchases(tabs, dryRun) {
   if (!tabs.some((t) => t.title === PURCHASES_TAB)) return { skipped: `no "${PURCHASES_TAB}" tab` };
   const today = cairoToday();
   const year = Number(today.slice(0, 4));
-  const rows = await sheets.getFormulas(SHEET_ID, `${q(PURCHASES_TAB)}!A${P_FIRST}:S500`);
+  const rows = await sheets.getFormulas(SHEET_ID, `${q(PURCHASES_TAB)}!A${P_FIRST}:V500`);
   const purchases = rows
     .map((r, i) => ({ row: P_FIRST + i, date: parseDate(r?.[0], year), key: String(r?.[1] || '').trim(), price: Number(r?.[2]) || 0, qty: Number(r?.[3]) || 0, raw: r || [] }))
     .filter((p) => p.key && p.qty > 0);
@@ -461,6 +461,7 @@ async function syncPurchases(tabs, dryRun) {
   const writes = [];
   const cycleRows = [];
   const summary = {};
+  const speeds = [];
   for (const p of purchases) {
     const { last, units } = result[p.row];
     // Column P: pairs sold as counted by hand — wins over the automatic count.
@@ -480,11 +481,23 @@ async function syncPurchases(tabs, dryRun) {
     if (p.raw[4] !== f.E) writes.push({ range: `${q(PURCHASES_TAB)}!E${p.row}`, values: [[f.E]] });
     if (p.raw[6] !== f.G || p.raw[9] !== f.J) writes.push({ range: `${q(PURCHASES_TAB)}!G${p.row}:J${p.row}`, values: [[f.G, f.H, f.I, f.J]] });
     if (p.raw[12] !== f.M || p.raw[13] !== f.N) writes.push({ range: `${q(PURCHASES_TAB)}!M${p.row}:N${p.row}`, values: [[f.M, f.N]] });
+    // Columns T–V: pairs sold per month, what to do, rank (filled after the loop).
+    const sp = speed({ date: p.date, qty: p.qty, sold, cleared: Number(p.raw[16]) || 0 }, today);
+    if (sp) speeds.push({ row: p.row, ...sp, raw: p.raw });
     const name = p.key.split('|')[0].trim();
     const dmy = (d) => `'${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
     for (const c of cash.cycles) cycleRows.push([name, dmy(p.date), c.n, dmy(c.from), dmy(c.to), c.sold, c.collected, c.cum, c.recovered, c.left, c.profit]);
-    summary[`${name} (${p.date})`] = { sold: `${sold}/${p.qty}`, matched: result[p.row].sold, manual, collected: cash.collected, cost: p.price * p.qty, paidBackOn: cash.paidBackOn };
+    summary[`${name} (${p.date})`] = { sold: `${sold}/${p.qty}`, matched: result[p.row].sold, manual, collected: cash.collected, cost: p.price * p.qty, paidBackOn: cash.paidBackOn, perMonth: sp?.perMonth, verdict: sp?.verdict };
   }
+
+  // Rank by speed: still-early batches go last, the rest fastest first.
+  [...speeds].sort((a, b) => (a.verdict === 'لسه بدري') - (b.verdict === 'لسه بدري') || b.perMonth - a.perMonth)
+    .forEach((x, i) => {
+      const vals = [x.perMonth, x.verdict, i + 1];
+      if (x.raw[19] !== vals[0] || x.raw[20] !== vals[1] || x.raw[21] !== vals[2]) writes.push({ range: `${q(PURCHASES_TAB)}!T${x.row}:V${x.row}`, values: [vals] });
+    });
+  const head = await sheets.getRawValues(SHEET_ID, `${q(PURCHASES_TAB)}!T${P_FIRST - 1}:V${P_FIRST - 1}`);
+  if (String(head?.[0]?.[0] || '') !== SPEED_HEADERS[0]) writes.push({ range: `${q(PURCHASES_TAB)}!T${P_FIRST - 1}:V${P_FIRST - 1}`, values: [SPEED_HEADERS] });
 
   if (!dryRun) {
     for (const w of writes) await sheets.updateValues(SHEET_ID, w.range, w.values);

@@ -34,14 +34,16 @@ export function parseDate(v, year = new Date().getUTCFullYear()) {
 }
 
 // Pairs of `key` in one sales row. `pairs` = the row's brand pair counts (L..P).
-// The key may list other spellings separated by "|" (e.g. "Reebok Float | rebook").
+// The key may list other spellings separated by "|" (e.g. "Reebok Float | rebook"),
+// and a model + colour joined by "&" (e.g. "Hyperboost & Brown"): every part must
+// appear in the row, in any order.
 export function unitsInRow(name, key, pairs = []) {
   const alts = String(key || '').split('|').map((a) => a.trim()).filter(Boolean);
   if (alts.length > 1) return Math.max(0, ...alts.map((a) => unitsInRow(name, a, pairs)));
   const n = norm(name);
-  const k = norm(key);
-  if (!k || !n.includes(k)) return 0;
-  const occ = n.split(k).length - 1;
+  const parts = String(key || '').split('&').map(norm).filter(Boolean);
+  if (!parts.length || parts.some((k) => !n.includes(k))) return 0;
+  const occ = Math.min(...parts.map((k) => n.split(k).length - 1));
   const brands = pairs.map(Number).filter((x) => x > 0);
   // A single item with several pairs (e.g. "Hyperboost 42/43" counted as 2) →
   // trust the pair count; a row listing several items counts mentions only.
@@ -157,6 +159,30 @@ export const rowFormulas = (r) => ({
   M: `=IF(D${r}="","",MAX(0,E${r}-N(L${r})-N(Q${r})*N(R${r})))`,
   N: `=IF(D${r}="","",MAX(0,N(L${r})+N(Q${r})*N(R${r})-E${r}))`,
 });
+
+// How fast a purchase sells, and what to do about it.
+// perMonth = pairs sold per 30 days since the purchase date.
+//   أقل من 4 أسابيع      → "لسه بدري"
+//   خلص كله              → "خلص — زوّد الكمية"
+//   4+ أزواج في الشهر    → "زوّد"
+//   2–4 في الشهر         → "ماشي"
+//   أقل من 2، وعدّى شهرين وفاضل أكتر من 3 → "وقّف وصفّي"
+//   أقل من 2             → "وقّف"
+export const SPEED_HEADERS = ['أزواج في الشهر (سرعة البيع)', 'القرار', 'الترتيب (الأسرع = 1)'];
+export function speed({ date, qty, sold, cleared = 0 }, today) {
+  if (!date || !qty) return null;
+  const age = Math.max(0, Math.round((Date.parse(today) - Date.parse(date)) / 86400000));
+  const perMonth = Math.round((sold / Math.max(age, 7)) * 30 * 10) / 10;
+  const left = Math.max(0, qty - sold - cleared);
+  let verdict;
+  if (!left) verdict = 'خلص — زوّد الكمية';
+  else if (age < 28) verdict = 'لسه بدري';
+  else if (perMonth >= 4) verdict = 'زوّد';
+  else if (perMonth >= 2) verdict = 'ماشي';
+  else if (age >= 60 && left > 3) verdict = 'وقّف وصفّي';
+  else verdict = 'وقّف';
+  return { age, perMonth, left, verdict };
+}
 
 // Stock sitting too long: purchases older than `days` days with pairs still
 // unsold (not counting pairs sold off cheap). Alerted once, then every
