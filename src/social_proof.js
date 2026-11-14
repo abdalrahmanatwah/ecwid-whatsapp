@@ -110,9 +110,11 @@ socialProofRouter.get('/widget.js', cors, (req, res) => {
   const wa = fs
     .readFileSync(path.join(__dirname, '..', 'public', 'whatsapp-button.js'), 'utf8')
     .replace('__WA_NUMBER__', waNumber);
+  // …and so does the "added to bag" celebration.
+  const party = fs.readFileSync(path.join(__dirname, '..', 'public', 'cart-celebration.js'), 'utf8');
   res.type('application/javascript');
   res.set('Cache-Control', 'public, max-age=300');
-  res.send(src + '\n' + wa);
+  res.send(src + '\n' + wa + '\n' + party);
 });
 
 socialProofRouter.get('/photos.json', cors, (_req, res) => {
