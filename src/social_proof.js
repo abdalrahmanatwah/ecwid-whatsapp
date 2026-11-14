@@ -112,9 +112,11 @@ socialProofRouter.get('/widget.js', cors, (req, res) => {
     .replace('__WA_NUMBER__', waNumber);
   // …and so does the "added to bag" celebration.
   const party = fs.readFileSync(path.join(__dirname, '..', 'public', 'cart-celebration.js'), 'utf8');
+  // …and the site header on every page.
+  const header = fs.readFileSync(path.join(__dirname, '..', 'public', 'site-header.js'), 'utf8');
   res.type('application/javascript');
   res.set('Cache-Control', 'public, max-age=300');
-  res.send(src + '\n' + wa + '\n' + party);
+  res.send(src + '\n' + wa + '\n' + party + '\n' + header);
 });
 
 socialProofRouter.get('/photos.json', cors, (_req, res) => {
