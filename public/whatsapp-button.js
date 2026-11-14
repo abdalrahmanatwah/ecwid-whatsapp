@@ -21,7 +21,7 @@
   var MESSAGE = '\u0623\u0647\u0644\u0627\u064b 499K\u060c \u0639\u0646\u062f\u064a \u0633\u0624\u0627\u0644'; // أهلاً 499K، عندي سؤال
   var PRODUCT_MESSAGE = '\u0623\u0647\u0644\u0627\u064b 499K\u060c \u0639\u0646\u062f\u064a \u0633\u0624\u0627\u0644 \u0639\u0646: '; // أهلاً 499K، عندي سؤال عن: 
   var LABEL = '\u0643\u0644\u0651\u0645\u0646\u0627 \u0639\u0644\u0649 \u0648\u0627\u062a\u0633\u0627\u0628'; // كلّمنا على واتساب
-  var SIDE = 'left'; // 'left' or 'right'
+  var SIDE = 'right'; // 'left' or 'right'
   var GAP = 16; // px from the screen edge and from anything pinned at the bottom
   var ID = 'k499-wa';
 
