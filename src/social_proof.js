@@ -106,7 +106,7 @@ socialProofRouter.get('/widget.js', cors, (req, res) => {
     .readFileSync(path.join(__dirname, '..', 'public', 'social-proof-widget.js'), 'utf8')
     .replace('__SOCIAL_PROOF_BASE__', base);
   // The WhatsApp button rides along in the same file (same Ecwid app).
-  const waNumber = String(process.env.STORE_WHATSAPP_NUMBER || '').replace(/\D/g, '');
+  const waNumber = String(process.env.STORE_WHATSAPP_NUMBER || '201128855617').replace(/\D/g, '');
   const wa = fs
     .readFileSync(path.join(__dirname, '..', 'public', 'whatsapp-button.js'), 'utf8')
     .replace('__WA_NUMBER__', waNumber);
