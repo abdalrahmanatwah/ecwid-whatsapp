@@ -9,6 +9,7 @@
 // means not already delivered, returned or cancelled. Each QP order is
 // handled once (remembered in /var/data/qp_ecwid.json).
 
+import { phoneKeys, ecwidPhones } from './phones.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Router } from 'express';
@@ -102,25 +103,7 @@ function saveState(s) {
   writeFileSync(STATE_FILE, JSON.stringify(s, null, 2));
 }
 
-// All phone numbers in a string, as their last 10 digits (Egyptian mobiles:
-// 01xxxxxxxxx / +201xxxxxxxxx / 0 122 … → 1xxxxxxxxx). Arabic-Indic digits included.
-export function phoneKeys(text) {
-  const western = String(text || '').replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
-  const keys = new Set();
-  for (const m of western.matchAll(/\+?\d[\d\s-]{8,}\d/g)) {
-    const digits = m[0].replace(/\D/g, '');
-    if (digits.length >= 10) keys.add(digits.slice(-10));
-  }
-  return keys;
-}
-
-function ecwidPhones(order) {
-  const keys = new Set();
-  for (const p of [order.phone, order.billingPerson?.phone, order.shippingPerson?.phone, order.contactPhone]) {
-    for (const k of phoneKeys(p)) keys.add(k);
-  }
-  return keys;
-}
+export { phoneKeys };
 
 const dayMs = 86_400_000;
 const day = (v) => (v ? String(v).slice(0, 10) : null);
