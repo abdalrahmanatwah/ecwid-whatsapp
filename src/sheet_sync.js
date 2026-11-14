@@ -26,6 +26,7 @@ import { store } from './store.js';
 import { notifyMerchant } from './notify.js';
 import { metaAdsConfigured, monthSpend } from './meta_ads.js';
 import { getOrder } from './ecwid.js';
+import { manualPrivateSales } from './private_delivered.js';
 import {
   normalizeBosta, normalizeQp, classify, privateSale, saleRowValues, reviewRowValues, monthKey, bostaFee, bostaCustomerPaid, returnCost,
 } from './sales_rows.js';
@@ -566,6 +567,23 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
       }
     }
 
+    // Ecwid orders marked Delivered by hand (private courier) → sales too.
+    let privateAuto = { added: 0, skipped: [] };
+    if (process.env.ECWID_STORE_ID && process.env.ECWID_API_TOKEN && String(process.env.PRIVATE_AUTO ?? 'true') !== 'false') {
+      try {
+        const pv = await manualPrivateSales(priceTable);
+        for (const c of pv.sales) {
+          if (state.processed[c.id]) continue;
+          if (c.action === 'sale') sales.push(c);
+          else if (c.action === 'review') reviews.push(c);
+        }
+        privateAuto = { found: pv.sales.length, skipped: pv.skipped };
+      } catch (e) {
+        console.warn('[sheet] hand-marked Ecwid deliveries unavailable:', e.message);
+        privateAuto = { error: e.message };
+      }
+    }
+
     // Actual Bosta fees: new sales first, then returns still unpriced.
     const feeReads = await fillBostaFees(
       [...sales, ...returnsSeen.filter((r) => state.returns?.[r.id]?.cost == null)],
@@ -663,6 +681,7 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
     const result = {
       at: new Date().toISOString(),
       dryRun,
+      privateAuto,
       bostaSource,
       bostaComplete,
       qpFresh,
