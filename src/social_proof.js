@@ -105,9 +105,14 @@ socialProofRouter.get('/widget.js', cors, (req, res) => {
   const src = fs
     .readFileSync(path.join(__dirname, '..', 'public', 'social-proof-widget.js'), 'utf8')
     .replace('__SOCIAL_PROOF_BASE__', base);
+  // The WhatsApp button rides along in the same file (same Ecwid app).
+  const waNumber = String(process.env.STORE_WHATSAPP_NUMBER || '').replace(/\D/g, '');
+  const wa = fs
+    .readFileSync(path.join(__dirname, '..', 'public', 'whatsapp-button.js'), 'utf8')
+    .replace('__WA_NUMBER__', waNumber);
   res.type('application/javascript');
   res.set('Cache-Control', 'public, max-age=300');
-  res.send(src);
+  res.send(src + '\n' + wa);
 });
 
 socialProofRouter.get('/photos.json', cors, (_req, res) => {
