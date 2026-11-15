@@ -19,3 +19,7 @@ export function ecwidPhones(order) {
   }
   return keys;
 }
+
+// A QP note that means the customer refused or cancelled the shipment
+// (رفض / لاغى / ملغي / إلغاء / اتلغى / كنسل / cancel…).
+export const REFUSED_NOTE = /رفض|لاغى|لاغي|ملغ|إلغاء|الغاء|إلغى|الغى|الغي|اتلغ|كنسل|cancel/i;

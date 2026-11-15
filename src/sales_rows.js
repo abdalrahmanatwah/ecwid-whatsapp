@@ -10,6 +10,8 @@
 //   return → counted in the month's refused/returned total, no row
 //   skip   → ignored (still in transit, fee lines, return pickups)
 
+import { REFUSED_NOTE } from './phones.js';
+
 const CAIRO_TZ = 'Africa/Cairo';
 
 export const BRANDS = ['ASICS', 'ADIDAS', 'NIKE', 'ON', 'OTHER'];
@@ -317,7 +319,7 @@ export function privateSale(order, priceTable, date, fee = 0) {
 export function classify(n, priceTable) {
   if (n.carrier === 'qp') {
     if (/^\s*(رسوم|استرجاع)/.test(n.description)) return { action: 'skip' };
-    const refused = /رفض|لاغى|لاغي|ملغ/.test(n.note);
+    const refused = REFUSED_NOTE.test(n.note);
     const neverLeft = /مجاش من الشركة/.test(n.note);
     if (n.state === 'Delivered' && n.deliveredDate) {
       if (n.amount <= 0 && n.returnedDate) return { action: 'return', id: n.id, carrier: n.carrier, date: n.createdDate, fee: n.fee, customerPaid: n.customerPaid || 0 };
