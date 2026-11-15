@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { pickManualPrivate, cairoDay } from '../src/private_delivered.js';
-import { REFUSED_NOTE } from '../src/phones.js';
+import { REFUSED_NOTE, POSTPONED_NOTE } from '../src/phones.js';
 
 const o = (x) => ({ id: 'A1', orderNumber: 101, fulfillmentStatus: 'DELIVERED', updateTimestamp: Date.parse('2026-11-14T10:00:00Z') / 1000, phone: '01011112222', items: [], ...x });
 
@@ -26,4 +26,9 @@ test('hand-marked deliveries: everything Delivered by hand since the start day',
 test('QP refusal / cancellation notes', () => {
   for (const n of ['رفض الاستلام', 'لاغى', 'ملغي', 'تم إلغاء الشحنة', 'العميل الغى', 'اتلغى', 'العميل كنسل', 'Cancelled by customer']) assert.ok(REFUSED_NOTE.test(n), n);
   for (const n of ['مجاش من الشركة', 'تم التسليم', 'المبلغ ناقص', '']) assert.ok(!REFUSED_NOTE.test(n), n);
+});
+
+test('QP postponed notes', () => {
+  for (const n of ['تاجيل غدا', 'تأجيل', 'مؤجل لبكرة', 'العميل طلب بكره']) assert.ok(POSTPONED_NOTE.test(n), n);
+  for (const n of ['', 'لايرد', 'رفض الاستلام', 'Cancelled']) assert.ok(!POSTPONED_NOTE.test(n), n);
 });

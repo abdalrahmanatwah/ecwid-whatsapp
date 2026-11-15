@@ -9,7 +9,7 @@
 // means not already delivered, returned or cancelled. Each QP order is
 // handled once (remembered in /var/data/qp_ecwid.json).
 
-import { phoneKeys, ecwidPhones, REFUSED_NOTE } from './phones.js';
+import { phoneKeys, ecwidPhones, POSTPONED_NOTE } from './phones.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Router } from 'express';
@@ -122,8 +122,8 @@ export function qpOutcome(o) {
   }
   if (o.status === 'Undelivered') {
     if (/مجاش من الشركة/.test(note)) return null; // never left the warehouse
-    const refused = REFUSED_NOTE.test(note);
-    if (!o.returned && !refused) return null;
+    // Undelivered on QP = cancelled/refused, unless the note says it's only postponed.
+    if (!o.returned && POSTPONED_NOTE.test(note)) return null;
     const seen = o.status_changed_at && o.first_seen_at && o.status_changed_at > o.first_seen_at ? day(o.status_changed_at) : null;
     return { kind: 'returned', day: day(o.returned) || seen || day(o.order_date) };
   }

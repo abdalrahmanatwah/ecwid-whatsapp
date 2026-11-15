@@ -23,3 +23,6 @@ export function ecwidPhones(order) {
 // A QP note that means the customer refused or cancelled the shipment
 // (رفض / لاغى / ملغي / إلغاء / اتلغى / كنسل / cancel…).
 export const REFUSED_NOTE = /رفض|لاغى|لاغي|ملغ|إلغاء|الغاء|إلغى|الغى|الغي|اتلغ|كنسل|cancel/i;
+
+// A QP note on an Undelivered order that means it's only postponed, not cancelled.
+export const POSTPONED_NOTE = /تاجيل|تأجيل|مؤجل|موجل|اجل|أجل|بكر[ةه]|غدا|غداً/;
