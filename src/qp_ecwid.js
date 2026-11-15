@@ -9,7 +9,7 @@
 // means not already delivered, returned or cancelled. Each QP order is
 // handled once (remembered in /var/data/qp_ecwid.json).
 
-import { phoneKeys, ecwidPhones } from './phones.js';
+import { phoneKeys, ecwidPhones, REFUSED_NOTE } from './phones.js';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Router } from 'express';
@@ -122,7 +122,7 @@ export function qpOutcome(o) {
   }
   if (o.status === 'Undelivered') {
     if (/مجاش من الشركة/.test(note)) return null; // never left the warehouse
-    const refused = /رفض|لاغى|لاغي|ملغ/.test(note);
+    const refused = REFUSED_NOTE.test(note);
     if (!o.returned && !refused) return null;
     const seen = o.status_changed_at && o.first_seen_at && o.status_changed_at > o.first_seen_at ? day(o.status_changed_at) : null;
     return { kind: 'returned', day: day(o.returned) || seen || day(o.order_date) };
@@ -267,6 +267,23 @@ export const qpEcwidRouter = Router();
 qpEcwidRouter.get('/status', (_req, res) => {
   const s = loadState();
   res.json({ enabled: ENABLED, start: START, customerMessages: { enabled: MESSAGES_ENABLED, start: MESSAGES_START, deliveredTemplate: DELIVERED_TEMPLATE || null, rejectedTemplate: REJECTED_TEMPLATE || null, sent: Object.keys(s.messaged || {}).length }, lastRunAt: s.lastRunAt, lastResult: s.lastResult, lastError: s.lastError || null, handled: Object.keys(s.handled || {}).length });
+});
+
+// Why a QP order did or didn't get its customer message: ?serial=23950911,23951009
+qpEcwidRouter.get('/check', (req, res) => {
+  const want = String(req.query.serial || '').split(/[\s,]+/).filter(Boolean);
+  const s = loadState();
+  const all = allQpOrders();
+  res.json(want.map((serial) => {
+    const o = all.find((x) => String(x.serial) === serial);
+    if (!o) return { serial, found: false, reason: 'not in the QP data yet (scraper)' };
+    const out = qpOutcome(o);
+    return {
+      serial, status: o.status, note: o.status_note || '', returned: o.returned || null, collected: o.collected || null,
+      outcome: out, messageStart: MESSAGES_START, messaged: (s.messaged || {})[serial] || null, ecwid: (s.handled || {})[serial] || null,
+      why: !out ? 'status/note not read as delivered or refused' : out.day < MESSAGES_START ? 'before the message start date' : (s.messaged || {})[serial] ? 'already messaged' : 'will be messaged on the next run',
+    };
+  }));
 });
 
 // ?dry=1 shows the matches without changing Ecwid.
