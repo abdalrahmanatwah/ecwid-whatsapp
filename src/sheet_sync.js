@@ -501,7 +501,8 @@ async function syncPurchases(tabs, dryRun) {
   if (String(head?.[0]?.[0] || '') !== SPEED_HEADERS[0]) writes.push({ range: `${q(PURCHASES_TAB)}!T${P_FIRST - 1}:V${P_FIRST - 1}`, values: [SPEED_HEADERS] });
 
   if (!dryRun) {
-    for (const w of writes) await sheets.updateValues(SHEET_ID, w.range, w.values);
+    // One call for all the cells, so it doesn't eat the per-minute write quota.
+    await sheets.batchUpdateValues(SHEET_ID, writes);
     // The cycles tab is rebuilt every run.
     if (!tabs.some((t) => t.title === CYCLES_TAB)) {
       await sheets.batchUpdate(SHEET_ID, [{ addSheet: { properties: { title: CYCLES_TAB, rightToLeft: true, gridProperties: { frozenRowCount: 1 } } } }]);
