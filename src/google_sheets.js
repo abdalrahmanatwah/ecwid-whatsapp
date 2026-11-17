@@ -66,12 +66,28 @@ async function accessToken() {
   return cachedToken.token;
 }
 
+// Google allows ~60 reads and ~60 writes a minute. A full sync can go past
+// that, so a 429 (or a passing 5xx) waits and tries again instead of failing
+// the step — the purchases step runs last and was the one getting cut off.
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+export const RETRY_WAITS_MS = [15_000, 30_000, 45_000, 60_000];
+
 async function call(method, url, body) {
-  const res = await fetch(url, {
-    method,
-    headers: { Authorization: `Bearer ${await accessToken()}`, 'Content-Type': 'application/json' },
-    ...(body ? { body: JSON.stringify(body) } : {}),
-  });
+  let res;
+  for (let attempt = 0; ; attempt++) {
+    res = await fetch(url, {
+      method,
+      headers: { Authorization: `Bearer ${await accessToken()}`, 'Content-Type': 'application/json' },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+    const retryable = res.status === 429 || res.status >= 500;
+    if (res.ok || !retryable || attempt >= RETRY_WAITS_MS.length) break;
+    const after = Number(res.headers.get('retry-after')) * 1000;
+    const wait = after > 0 ? Math.min(after, 90_000) : RETRY_WAITS_MS[attempt];
+    console.warn(`[sheets] ${res.status} on ${method} — retrying in ${Math.round(wait / 1000)}s`);
+    await res.text().catch(() => '');
+    await sleep(wait);
+  }
   if (!res.ok) {
     const t = await res.text().catch(() => '');
     throw new Error(`Sheets ${method} failed: ${res.status} ${t.slice(0, 300)}`);
@@ -112,6 +128,12 @@ export async function clearValues(spreadsheetId, range) {
 // Writes values/formulas exactly as if typed into the UI.
 export async function updateValues(spreadsheetId, range, values) {
   return call('PUT', `${API}/${spreadsheetId}/values/${enc(range)}?valueInputOption=USER_ENTERED`, { values });
+}
+
+// Many ranges in one write call: [{ range, values }].
+export async function batchUpdateValues(spreadsheetId, data) {
+  if (!data.length) return null;
+  return call('POST', `${API}/${spreadsheetId}/values:batchUpdate`, { valueInputOption: 'USER_ENTERED', data });
 }
 
 export async function appendValues(spreadsheetId, range, values) {
