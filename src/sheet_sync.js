@@ -144,7 +144,17 @@ function findMonthTab(tabs, key) {
 }
 
 // Row numbers (1-based) of the total row and the summary rows, found by label.
+// The ad-spend and purchases steps read the same month tabs' layout; while
+// they run (no rows are added then) each tab is read once, to save quota.
+let layoutCache = null;
 async function readLayout(tab) {
+  if (layoutCache?.has(tab)) return layoutCache.get(tab);
+  const layout = await readLayoutFresh(tab);
+  layoutCache?.set(tab, layout);
+  return layout;
+}
+
+async function readLayoutFresh(tab) {
   const colC = await sheets.getValues(SHEET_ID, `${q(tab)}!C1:C400`);
   const find = (re, after = 0) => {
     const i = colC.findIndex((r, idx) => idx >= after && re.test(String(r?.[0] || '')));
@@ -663,20 +673,30 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
 
     // Ad spend from Meta Ads Manager (never blocks the rest of the sync).
     let adSpend;
+    layoutCache = new Map();
+    const tabsNow = await sheets.getTabs(SHEET_ID);
     try {
-      adSpend = await syncAdSpend(await sheets.getTabs(SHEET_ID), dryRun);
+      adSpend = await syncAdSpend(tabsNow, dryRun);
     } catch (e) {
       adSpend = { error: e.message };
       console.warn('[sheet] ad spend sync failed:', e.message);
+      // A Meta failure (usually an expired token) would otherwise go unnoticed:
+      // tell the merchant, once a day.
+      if (/Meta/.test(e.message) && !dryRun && state.metaAlertOn !== cairoToday()) {
+        state.metaAlertOn = cairoToday();
+        await notifyMerchant(`⚠️ مصاريف الإعلانات في الشيت مش بتتحدّث: ميتا رفضت الطلب.\n${e.message.slice(0, 200)}\nغالباً التوكن (META_ADS_TOKEN) انتهى — اعمل توكن جديد وحطه في Render.`).catch(() => {});
+      }
     }
 
     // Stock bought up front: how much of it has sold (never blocks the rest).
     let purchases;
     try {
-      purchases = await syncPurchases(await sheets.getTabs(SHEET_ID), dryRun);
+      purchases = await syncPurchases(tabsNow, dryRun);
     } catch (e) {
       purchases = { error: e.message };
       console.warn('[sheet] purchases sync failed:', e.message);
+    } finally {
+      layoutCache = null;
     }
 
     const result = {
