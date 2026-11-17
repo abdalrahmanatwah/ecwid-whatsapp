@@ -144,8 +144,8 @@ function findMonthTab(tabs, key) {
 }
 
 // Row numbers (1-based) of the total row and the summary rows, found by label.
-// The ad-spend and purchases steps read the same month tabs' layout; while
-// they run (no rows are added then) each tab is read once, to save quota.
+// After new rows are added, the later steps (returns, fees, ads, purchases)
+// read the same month tabs' layout; each tab is read once, to save quota.
 let layoutCache = null;
 async function readLayout(tab) {
   if (layoutCache?.has(tab)) return layoutCache.get(tab);
@@ -511,6 +511,11 @@ async function syncPurchases(tabs, dryRun) {
   if (String(head?.[0]?.[0] || '') !== SPEED_HEADERS[0]) writes.push({ range: `${q(PURCHASES_TAB)}!T${P_FIRST - 1}:V${P_FIRST - 1}`, values: [SPEED_HEADERS] });
 
   if (!dryRun) {
+    // Columns T–V (speed) need 22 columns; a tab made by hand may have fewer,
+    // and then the whole write would be refused.
+    const ptab = tabs.find((t) => t.title === PURCHASES_TAB);
+    const cols = ptab?.gridProperties?.columnCount || 0;
+    if (ptab && cols < 22) await sheets.batchUpdate(SHEET_ID, [{ appendDimension: { sheetId: ptab.sheetId, dimension: 'COLUMNS', length: 22 - cols } }]);
     // One call for all the cells, so it doesn't eat the per-minute write quota.
     await sheets.batchUpdateValues(SHEET_ID, writes);
     // The cycles tab is rebuilt every run.
@@ -552,6 +557,7 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
   }
 
   running = true;
+  layoutCache = null;
   try {
     const priceTable = await readPriceTable();
     const { orders, bostaSource, bostaComplete, qpFresh, qpLastSeen } = await gatherOrders(state);
@@ -655,6 +661,10 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
       for (const r of newReviews) state.processed[r.id] = { action: 'review', at: new Date().toISOString() };
     }
 
+    // From here on no rows are added to month tabs, so each tab's layout is
+    // read once for the rest of the run (saves ~40 reads of the 60/minute quota).
+    layoutCache = new Map();
+
     // Return counts.
     if (!dryRun && Object.keys(returnCounts).length) {
       await ensureReturnsTab(tabs);
@@ -673,7 +683,6 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
 
     // Ad spend from Meta Ads Manager (never blocks the rest of the sync).
     let adSpend;
-    layoutCache = new Map();
     const tabsNow = await sheets.getTabs(SHEET_ID);
     try {
       adSpend = await syncAdSpend(tabsNow, dryRun);
@@ -734,6 +743,7 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
     return result;
   } finally {
     running = false;
+    layoutCache = null;
   }
 }
 
