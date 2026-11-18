@@ -127,3 +127,16 @@ test('sell speed and what to do', () => {
   assert.equal(speed({ date: '2026-09-01', qty: 10, sold: 1 }, t).verdict, 'وقّف وصفّي');
   assert.equal(speed({ date: '2026-09-01', qty: 10, sold: 1, cleared: 7 }, t).verdict, 'وقّف');
 });
+
+test('insole purchases count the insole column, not the name', async () => {
+  const { allocate } = await import('../src/purchases.js');
+  const p = [{ row: 20, date: '2026-11-18', key: 'فرش طبي', qty: 150 }];
+  const s = [
+    { date: '2026-11-18', name: 'ASICS COURT FF 3 Size: 44', pairs: [1, 0, 0, 0, 0], net: 4000, insoles: 2 },
+    { date: '2026-11-19', name: 'HOKA Speed Goat 7', pairs: [0, 0, 0, 0, 1], net: 3000, insoles: 1 },
+    { date: '2026-11-17', name: 'old', pairs: [1], net: 3000, insoles: 1 },
+  ];
+  const r = allocate(p, s);
+  assert.equal(r[20].sold, 3);
+  assert.equal(Math.round(r[20].units.reduce((a, u) => a + u.revenue, 0)), 950);
+});
