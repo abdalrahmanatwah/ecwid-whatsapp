@@ -464,7 +464,7 @@ async function syncPurchases(tabs, dryRun) {
     const data = await sheets.getRawValues(SHEET_ID, `${q(tab.title)}!A${FIRST_DATA_ROW}:P${total - 1}`);
     for (const r of data) {
       if (typeof r?.[0] !== 'number' || !r[2]) continue;
-      sales.push({ date: serialToDate(r[0]), name: String(r[2]), pairs: r.slice(11, 16), net: Number(r[7]) || 0 });
+      sales.push({ date: serialToDate(r[0]), name: String(r[2]), pairs: r.slice(11, 16), net: Number(r[7]) || 0, insoles: Number(r[4]) || 0 });
     }
   }
   const result = allocate(purchases, sales);

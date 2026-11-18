@@ -37,9 +37,14 @@ export function parseDate(v, year = new Date().getUTCFullYear()) {
 // The key may list other spellings separated by "|" (e.g. "Reebok Float | rebook"),
 // and a model + colour joined by "&" (e.g. "Hyperboost & Brown"): every part must
 // appear in the row, in any order.
-export function unitsInRow(name, key, pairs = []) {
+// Insoles aren't in the shoe name: a purchase keyed "فرش" / "فرش طبي" / "insole"
+// counts the row's insole column instead.
+export const isInsoleKey = (key) => /^(فرش(طبي)?|insoles?)$/.test(norm(key));
+
+export function unitsInRow(name, key, pairs = [], insoles = 0) {
+  if (isInsoleKey(key)) return Math.max(0, Number(insoles) || 0);
   const alts = String(key || '').split('|').map((a) => a.trim()).filter(Boolean);
-  if (alts.length > 1) return Math.max(0, ...alts.map((a) => unitsInRow(name, a, pairs)));
+  if (alts.length > 1) return Math.max(0, ...alts.map((a) => unitsInRow(name, a, pairs, insoles)));
   const n = norm(name);
   const parts = String(key || '').split('&').map(norm).filter(Boolean);
   if (!parts.length || parts.some((k) => !n.includes(k))) return 0;
@@ -66,9 +71,13 @@ export function allocate(purchases, sales) {
     const rowPairs = Math.max(1, (s.pairs || []).map(Number).filter((x) => x > 0).reduce((a, b) => a + b, 0));
     // Each model named on the row; its pairs go to that model's oldest open purchase(s).
     for (const k of keys) {
-      let units = unitsInRow(s.name, open.find((p) => p.k === k).key, s.pairs);
-      // The row's money is split evenly over its pairs.
-      const perPair = (Number(s.net) || 0) / Math.max(rowPairs, units);
+      const key = open.find((p) => p.k === k).key;
+      let units = unitsInRow(s.name, key, s.pairs, s.insoles);
+      // The row's money is split evenly over its pairs (insoles: the price
+      // they add to the order, 350 for one, 600 for two).
+      const perPair = isInsoleKey(key)
+        ? (units ? (units >= 2 ? 300 : 350) : 0)
+        : (Number(s.net) || 0) / Math.max(rowPairs, units);
       for (const p of open) {
         if (!units) break;
         if (p.k !== k || p.date > s.date || !p.left) continue;
