@@ -167,6 +167,7 @@ async function readLayoutFresh(tab) {
     ads: find(/^مصاريف الإعلانات/, total),
     returns: find(/^أوردرات مرفوضة/, total),
     returnsCost: find(/^تكلفة المرتجعات/, total),
+    other: find(/^مصاريف تانية/, total),
   };
 }
 
@@ -237,6 +238,8 @@ async function createMonthTab(tabs, key) {
   if (after.ads) await sheets.updateValues(SHEET_ID, `${q(name)}!C${after.ads}:F${after.ads}`, [['مصاريف الإعلانات (اكتبها هنا)', null, null, 0]]);
   if (after.returns) await sheets.updateValues(SHEET_ID, `${q(name)}!F${after.returns}`, [[returnsFormula(key)]]);
   if (after.returnsCost) await sheets.updateValues(SHEET_ID, `${q(name)}!F${after.returnsCost}`, [[returnsCostFormula(key)]]);
+  // One-off expenses (flyers etc.) belong to the month they were paid in.
+  if (after.other) await sheets.updateValues(SHEET_ID, `${q(name)}!C${after.other}:F${after.other}`, [['مصاريف تانية (اكتبها هنا)', null, null, 0]]);
 
   console.log(`[sheet] created month tab "${name}" from "${source.title}"`);
   await notifyMerchant(`📅 اتعمل تاب جديد في شيت المبيعات: ${name}. اكتب مصاريف الإعلانات بتاعة الشهر فيه.`);
