@@ -47,3 +47,9 @@ test('real messages: Al Ahly instant transfer, Vodafone Cash transfer with fee a
   assert.ok(!v.text.includes('http'));
   assert.equal(p('VF-Cash', 'جدد باقة Flex من خلال فودافون كاش قبل ما تخلص').kind, 'ignore');
 });
+
+test('OTP for a purchase in progress is ignored even though it carries the amount', () => {
+  const r = p('BanK-AlAhly', 'راجع هذا الكود سرى 224700. يرجى عدم مشاركته مع أي شخص آخر، وهو مخصص لعملية الشراء التي تقوم بها الآن بمبلغ EGP 10,122.00 عند التاجر My fawry في 22.11.2026 12:25 بالبطاقة رقم 8502');
+  assert.equal(r.kind, 'ignore');
+  assert.equal(p('NBE', 'تم خصم مبلغ 300 جنيه لدى مطعم سريع الرصيد المتاح 100').kind, 'tx');
+});

@@ -114,6 +114,10 @@ export function sourceOf(from, text) {
   return String(from || 'غير معروف').slice(0, 30);
 }
 
+// One-time codes: the bank sends the amount with them ("…لعملية الشراء التي تقوم بها
+// الآن بمبلغ EGP 10,122"), but no money has moved yet — the real debit SMS comes after.
+const OTP_RE = /OTP|one[- ]?time|verification code|password|do not share|الكود|كود|رمز\s+(?:التحقق|سر)|(?:^|\s)سر[يى](?=[\s.،,]|$)|كلمة\s+(?:السر|المرور)|عدم\s+مشاركت|لا\s+تشارك/i;
+
 // Messages that move no money: codes, offers, login alerts.
 const NOT_MONEY = /(?:OTP|كود التحقق|رمز التحقق|كلمة السر|verification code|password|\bcode\b|لا تشارك|do not share|عرض|offer|خصم\s+\d+\s*%)/i;
 
@@ -135,7 +139,7 @@ export function parseMoneySms(from, rawText) {
   // Read the amount with the balance part blanked out, so "رصيدك 900" is never taken as the amount.
   const noBal = bal ? text.slice(0, bal.index) + ' '.repeat(bal[0].length) + text.slice(bal.index + bal[0].length) : text;
   const amount = findAmount(noBal);
-  if (/OTP|كود التحقق|رمز التحقق|verification code|لا تشارك|do not share/i.test(text)) return { kind: 'ignore', source, text: masked };
+  if (OTP_RE.test(text)) return { kind: 'ignore', source, text: masked };
   if (NOT_MONEY.test(text) && !amount) return { kind: 'ignore', source, text: masked };
   if (!cut && !amount) return { kind: 'ignore', source, text: masked };
   // Service fee is read separately so it isn't taken as the amount, then added to money out.
