@@ -18,6 +18,7 @@ import { runEcwidManualMessages, manualMessagesStatus } from './ecwid_manual_msg
 import { qpEcwidRouter } from './qp_ecwid.js';
 import { moneyWebhookRouter, moneyDashboardRouter } from './money.js';
 import { moneyData, MONEY_HTML } from './money_page.js';
+import { checkBostaEcwid } from './bosta_ecwid_check.js';
 import { salesPageRouter, pageUrl, extraLinks, createExtraLink, revokeExtraLink, ensureExtraLink } from './sales_page.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -68,6 +69,11 @@ app.get('/', (_req, res) => res.send('Ecwid → WhatsApp order confirmation: run
  * Both the page and its API are behind Basic Auth (DASHBOARD_PASSWORD)*
  * ------------------------------------------------------------------ */
 app.use('/dashboard/sheet-sync', requireAuth, sheetSyncRouter);
+// Are Bosta deliveries marked Delivered on Ecwid? ?days=21, &fix=1 to mark them.
+app.get('/dashboard/bosta-ecwid/check', requireAuth, async (req, res) => {
+  try { res.json(await checkBostaEcwid({ days: Math.min(60, Number(req.query.days) || 21), fix: req.query.fix === '1' })); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.get('/dashboard/money', requireAuth, (_req, res) => res.type('html').set('Cache-Control', 'no-store').send(MONEY_HTML));
 app.get('/dashboard/money/data.json', requireAuth, async (_req, res) => {
   try { res.set('Cache-Control', 'no-store').json(await moneyData()); } catch (e) { res.status(500).json({ error: e.message }); }
