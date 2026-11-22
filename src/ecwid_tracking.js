@@ -11,7 +11,7 @@
 // Two throttled phases per order, and it gives up after a cap so it never polls
 // forever. Never throws.
 
-import { getOrder, updateOrder, adjustInventory } from './ecwid.js';
+import { getOrder, updateOrder, adjustInventory, searchOrders } from './ecwid.js';
 import { getDeliveryState, bostaConfigured } from './bosta.js';
 import { sendTemplate, sendTemplateWithButtons } from './whatsapp.js';
 import { markAuto, noteSent } from './auto_marks.js';
@@ -229,8 +229,37 @@ export async function remindAwaitingTracking() {
   console.log(`[track] daily tracking reminder sent for ${waiting.length} order(s)`);
 }
 
+// Orders that got a Bosta tracking number on Ecwid but never entered the
+// confirmed → tracking flow: the customer didn't answer the WhatsApp poll
+// (status poll_sent) and was confirmed by phone, or the order isn't watched at
+// all. Without this they were never marked Delivered (5 of 47 in Nov 2026).
+// One Ecwid search per LOOK interval, not one call per order.
+const ADOPT_FROM = new Set(['poll_sent', 'no_tracking', 'tracking_gone', ...AWAITING_TRACKING]);
+const CLOSED = new Set([DELIVERED_STATUS, RETURNED_STATUS, CANCEL_FULFILLMENT_STATUS]);
+export async function adoptShippedOrders({ now = Date.now(), search = searchOrders } = {}) {
+  const last = store.getMeta('adoptShippedAt');
+  if (last && now - new Date(last).getTime() < LOOK_EVERY_MS) return [];
+  store.setMeta('adoptShippedAt', new Date(now).toISOString());
+  const orders = await search(Math.floor((now - LOOK_MAX_DAYS * 86_400_000) / 1000), null, 'updated');
+  const recs = new Map(store.list().map((r) => [String(r.orderId), r]));
+  const adopted = [];
+  for (const o of orders) {
+    const tn = extractTracking(o);
+    if (!tn || CLOSED.has(o.fulfillmentStatus) || o.paymentStatus === CANCEL_STATUS) continue;
+    const id = String(o.id);
+    const rec = recs.get(id);
+    if (rec && (rec.bostaTracking || !ADOPT_FROM.has(rec.status))) continue;
+    const to = rec?.to || normalizePhone(o.billingPerson?.phone || o.shippingPerson?.phone || '', COUNTRY);
+    store.upsert(id, { status: 'tracking', bostaTracking: tn, trackingFoundAt: new Date(now).toISOString(), to, orderNumber: rec?.orderNumber || o.orderNumber, adopted: true });
+    adopted.push(o.orderNumber || id);
+  }
+  if (adopted.length) console.log(`[track] picked up ${adopted.length} shipped order(s) outside the confirm flow: ${adopted.join(', ')}`);
+  return adopted;
+}
+
 export async function trackFromEcwid() {
   if (!bostaConfigured()) return;
+  try { await adoptShippedOrders(); } catch (e) { console.warn('[track] adopt shipped orders failed:', e.message); }
 
   if (process.env.TRACK_DEBUG === 'true') {
     const summary = store.list().map(r => `${r.orderId}:${r.status}${r.bostaTracking ? '(' + r.bostaTracking + ')' : ''}`).join(' ');
