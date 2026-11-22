@@ -273,6 +273,12 @@ can't read are still logged as "مش واضح".
    URL `https://<service>/webhooks/money?token=<MONEY_TOKEN>`, method POST,
    template `{"from":"%from%","text":"%text%","sentStamp":"%sentStamp%"}`.
 
+- The hourly sales sync also writes one income row per day with 499K's profit
+  (month tab column J: after shipping and wholesale, before ads — ads already
+  show up as Fawry expenses), from `MONEY_PROFIT_START` (default 2026-11-01),
+  and the outside salary `MONEY_SALARY` on day `MONEY_SALARY_DAY` (default 1).
+  Rows have stable ids, so they are updated in place.
+- `/dashboard/money`: the فلوسي page (phone-first view of the sheet).
 - `/dashboard/money/status`: what was logged lately, last error.
 - `/dashboard/money/test?from=VF-Cash&text=…`: how a message is read (nothing written).
 
