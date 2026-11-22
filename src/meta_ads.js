@@ -40,3 +40,23 @@ export async function monthSpend(key) {
     currency: row?.account_currency || null,
   };
 }
+
+// Spend per day for a "YYYY-MM" month: { 'YYYY-MM-DD': spend }. Days with no
+// spend are missing (= 0). Taxes setting (الافتراضات B16) is applied by the caller.
+export async function dailySpend(key) {
+  const since = `${key}-01`;
+  const until = `${key}-${String(lastDayOfMonth(key)).padStart(2, '0')}`;
+  const url = new URL(`https://graph.facebook.com/${VERSION}/act_${ACCOUNT}/insights`);
+  url.searchParams.set('fields', 'spend');
+  url.searchParams.set('level', 'account');
+  url.searchParams.set('time_increment', '1');
+  url.searchParams.set('time_range', JSON.stringify({ since, until }));
+  url.searchParams.set('limit', '40');
+  url.searchParams.set('access_token', TOKEN);
+  const res = await fetch(url);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.error) throw new Error(`Meta daily insights failed: ${res.status} ${data.error?.message || ''}`.trim());
+  const out = {};
+  for (const r of data.data || []) if (r.date_start) out[r.date_start] = Number(r.spend) || 0;
+  return out;
+}

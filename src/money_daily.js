@@ -1,13 +1,15 @@
 // Feeds the personal money sheet ("فلوسي") from the business:
-//  - one income row per day with 499K's profit on the orders delivered that day
-//    (column J of the month tab: after shipping and wholesale, BEFORE ads —
-//    ads are already in the personal sheet as Fawry expenses, so this avoids
-//    counting them twice);
+//  - one income row per day with 499K's net for the day: profit on the orders
+//    delivered that day (month tab column J: after shipping and wholesale)
+//    minus that day's Meta ad spend, minus the partners' share (their % from
+//    the partners tab, from their start date). The Fawry payments that fund the
+//    ad account are business money, so the page and summary leave the
+//    "إعلانات" category out of personal spending;
 //  - the monthly outside salary (MONEY_SALARY, on day MONEY_SALARY_DAY, default 1).
 // Rows have stable ids (499k:YYYY-MM-DD, salary:YYYY-MM), so re-running updates
 // them in place instead of adding duplicates.
 
-export const PROFIT_CAT = 'ربح 499K';
+export const PROFIT_CAT = 'صافي 499K';
 export const SALARY_CAT = 'مرتب';
 
 // rows: raw month-tab rows from column A (date serial) to J (profit).
@@ -23,9 +25,20 @@ export function profitByDay(rows, serialToDate) {
   return out;
 }
 
-export function profitRow(date, profit) {
-  return [date, '23:59', '499K', profit >= 0 ? 'دخل' : 'مصروف', profit > 0 ? profit : '', profit < 0 ? -profit : '',
-    'أرباح الأوردرات', PROFIT_CAT, '', `'ربح الأوردرات اللي اتسلمت يوم ${date} بعد الشحن والجملة (قبل الإعلانات)`, `499k:${date}`];
+// One day's net: orders' profit − ad spend, then the partners' cut (pct, 0–1) if it applies.
+export function dayNet(profit, ads, pct) {
+  const before = (profit || 0) - (ads || 0);
+  const partners = pct ? before * pct : 0;
+  return { before: round2(before), partners: round2(partners), net: round2(before - partners) };
+}
+const round2 = (x) => Math.round(x * 100) / 100;
+const f0 = (x) => Math.round(x).toLocaleString('en-US');
+
+export function profitRow(date, profit, ads = 0, pct = 0) {
+  const { partners, net } = dayNet(profit, ads, pct);
+  const note = `ربح الأوردرات ${f0(profit)} − إعلانات ${f0(ads)}` + (pct ? ` − نصيب الشركاء ${f0(partners)} (${Math.round(pct * 1000) / 10}%)` : '');
+  return [date, '23:59', '499K', net >= 0 ? 'دخل' : 'مصروف', net > 0 ? net : '', net < 0 ? -net : '',
+    'صافي اليوم', PROFIT_CAT, '', `'${note}`, `499k:${date}`];
 }
 
 export function salaryRow(month, day, amount) {
@@ -47,9 +60,3 @@ export function planUpserts(existing, wanted) {
   return { updates, appends };
 }
 
-export const PARTNERS_CAT = 'نصيب الشركاء';
-// The partners' share for a month (from the "نسب الشركاء" tab: their % of the
-// month's net profit after ads and all costs) as one expense row, kept current.
-export function partnersRow(month, date, amount) {
-  return [date, '23:59', '499K', 'مصروف', '', amount, 'الشركاء', PARTNERS_CAT, '', `'نصيب الشركاء من صافي ربح 499K شهر ${month}`, `partners:${month}`];
-}
