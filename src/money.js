@@ -12,7 +12,7 @@
 //
 // Body (SMS to URL Forwarder template): {"from":"%from%","text":"%text%","sentStamp":"%sentStamp%"}
 
-import { Router } from 'express';
+import express, { Router } from 'express';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import * as sheets from './google_sheets.js';
@@ -81,12 +81,16 @@ export async function ingest({ from = '', text = '', sentStamp } = {}) {
 
 // Public webhook (token-protected).
 export const moneyWebhookRouter = Router();
-moneyWebhookRouter.post('/', async (req, res) => {
+// Any forwarder app works: JSON, form fields, plain text, or query string (GET too).
+moneyWebhookRouter.use(express.urlencoded({ extended: false }), express.text({ type: ['text/*'] }));
+moneyWebhookRouter.all('/', async (req, res) => {
   const token = req.query.token || req.get('x-money-token');
   if (!TOKEN || token !== TOKEN) return res.status(401).json({ error: 'bad token' });
-  const b = typeof req.body === 'object' && req.body ? req.body : {};
+  let b = typeof req.body === 'object' && req.body ? { ...req.body } : {};
+  if (typeof req.body === 'string') { try { b = JSON.parse(req.body); } catch { b = { text: req.body }; } }
+  for (const k of ['from', 'sender', 'text', 'message', 'body', 'msg', 'sentStamp', 'timestamp']) if (b[k] == null && req.query[k] != null) b[k] = req.query[k];
   try {
-    res.json(await ingest({ from: b.from || b.sender || '', text: b.text || b.message || b.body || '', sentStamp: b.sentStamp || b.receivedStamp || b.timestamp }));
+    res.json(await ingest({ from: b.from || b.sender || b.number || b.phone || '', text: b.text || b.message || b.msg || b.body || b.content || '', sentStamp: b.sentStamp || b.receivedStamp || b.timestamp }));
   } catch (e) {
     const st = loadState();
     st.lastError = { at: new Date().toISOString(), message: e.message };
