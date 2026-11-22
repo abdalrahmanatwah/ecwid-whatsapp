@@ -104,6 +104,9 @@ h2 small{color:var(--muted);font-weight:400;font-size:12px}
 .warn{background:var(--warn-soft);color:var(--warn);border-radius:12px;padding:10px 12px;font-size:13px;margin-top:14px}
 .empty,.note{color:var(--muted);font-size:13px;text-align:center;padding:18px 0}
 .biz{font-size:13px}.biz .bh,.biz .br{display:grid;grid-template-columns:1.4fr .6fr 1fr 1fr 1fr 1fr;white-space:nowrap;gap:6px;padding:8px 0;border-bottom:1px solid var(--line);align-items:center}.biz .bh{color:var(--muted);font-size:11px}.biz .br:last-child{border-bottom:0}.biz .num{font-size:12px}
+/* Wide screens: transactions and 499K day-by-day side by side. */
+.cols{display:block}
+@media (min-width:980px){.wrap{max-width:1180px}.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}.cols>.panel{margin-top:14px}}
 .err{background:var(--out-soft);color:var(--out);padding:14px;border-radius:12px;margin-top:14px}
 @media (max-width:420px){.hero .net{font-size:34px}.pill .v{font-size:19px}}
 </style>
@@ -271,7 +274,8 @@ function render() {
   $('#app').replaceChildren(...[chips, hero, bals,
     bizOut ? h('div', { class: 'note', style: 'text-align:start;padding:10px 4px 0' }, '📣 اتدفع للإعلانات من فوري الشهر ده: ', money(bizOut), ' — مش محسوب هنا، لأنه متخصم أصلاً من صافي 499K اليومي.') : null,
     unclear ? h('div', { class: 'warn' }, unclear + ' رسالة ما اتقريتش كويس الشهر ده — معلّمة "مش واضح" تحت.') : null,
-    bizPanel, catPanel, daysPanel, listPanel,
+    h('div', { class: 'cols' }, catPanel, daysPanel),
+    h('div', { class: 'cols' }, listPanel, bizPanel),
     h('p', { class: 'note' }, 'كل رسالة من البنك أو فودافون كاش بتظهر هنا لوحدها. تعديل التصنيف بيتعمل من الشيت.')].filter(Boolean));
 }
 
