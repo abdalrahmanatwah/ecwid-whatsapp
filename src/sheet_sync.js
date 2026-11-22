@@ -19,13 +19,13 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Router } from 'express';
 import * as sheets from './google_sheets.js';
-import { profitByDay, profitRow, salaryRow, partnersRow, planUpserts } from './money_daily.js';
+import { profitByDay, profitRow, salaryRow, planUpserts } from './money_daily.js';
 import { listRecentDeliveries, probeListing, deliveryShape } from './bosta_list.js';
 import { getDeliveryState, bostaConfigured } from './bosta.js';
 import { allQpOrders } from './qp_orders.js';
 import { store } from './store.js';
 import { notifyMerchant } from './notify.js';
-import { metaAdsConfigured, monthSpend } from './meta_ads.js';
+import { metaAdsConfigured, monthSpend, dailySpend } from './meta_ads.js';
 import { getOrder } from './ecwid.js';
 import { manualPrivateSales } from './private_delivered.js';
 import {
@@ -377,31 +377,29 @@ async function syncPersonalMoney(tabs) {
   const prev = `${m === 1 ? y - 1 : y}-${String(m === 1 ? 12 : m - 1).padStart(2, '0')}`;
   const start = process.env.MONEY_PROFIT_START || '2026-11-01';
   const wanted = [];
+  // Partners: total % (B4+B5) and start date (B6) from the partners tab; ad tax % from الافتراضات B16.
+  const pt = await sheets.getRawValues(SHEET_ID, `'نسب الشركاء'!B4:B6`).catch(() => []);
+  const pct = (Number(pt?.[0]?.[0]) || 0) + (Number(pt?.[1]?.[0]) || 0);
+  const pStart = typeof pt?.[2]?.[0] === 'number' ? serialToDate(pt[2][0]) : '9999-12-31';
+  const tax = Number((await sheets.getRawValues(SHEET_ID, `'الافتراضات'!B16`).catch(() => []))?.[0]?.[0]) || 0;
   for (const key of [prev, month]) {
     const tab = findMonthTab(tabs, key);
-    if (!tab) continue;
+    if (!tab || key < start.slice(0, 7)) continue;
     const layout = await readLayout(tab.title);
     const rows = await sheets.getRawValues(SHEET_ID, `${q(tab.title)}!A${FIRST_DATA_ROW}:J${layout.total - 1}`);
-    for (const [d, p] of Object.entries(profitByDay(rows, serialToDate))) {
-      if (d >= start && d <= today && d.startsWith(key) && p) wanted.push(profitRow(d, p));
+    const profit = profitByDay(rows, serialToDate);
+    const ads = metaAdsConfigured() ? await dailySpend(key) : {};
+    const days = new Set([...Object.keys(profit), ...Object.keys(ads)]);
+    for (const d of days) {
+      if (d < start || d > today || !d.startsWith(key)) continue; // today's row keeps updating through the day
+      const p = profit[d] || 0, a = (ads[d] || 0) * (1 + tax);
+      if (!p && !a) continue;
+      wanted.push(profitRow(d, p, a, d >= pStart ? pct : 0));
     }
   }
   const salary = Number(process.env.MONEY_SALARY || 0);
   const salaryDay = Number(process.env.MONEY_SALARY_DAY || 1);
   if (salary > 0 && Number(today.slice(8, 10)) >= salaryDay && `${month}-01` >= start.slice(0, 7) + '-01') wanted.push(salaryRow(month, salaryDay, salary));
-  // Partners' share of each month's net profit (what the partners tab shows), as an expense.
-  const prow = await sheets.getRawValues(SHEET_ID, `'نسب الشركاء'!A9:E80`).catch(() => []);
-  for (const r of prow || []) {
-    const name = String(r?.[0] || '');
-    const mi = MONTHS_AR.findIndex((n) => name.startsWith(n + ' '));
-    const yy = Number(name.split(' ')[1]);
-    const share = Math.round((Number(r?.[4]) || 0) * 100) / 100;
-    if (mi < 0 || !yy || share <= 0) continue;
-    const key = `${yy}-${String(mi + 1).padStart(2, '0')}`;
-    if (key < start.slice(0, 7)) continue;
-    const last = new Date(Date.UTC(yy, mi + 1, 0)).toISOString().slice(0, 10);
-    wanted.push(partnersRow(key, today < last ? today : last, share));
-  }
   const existing = await sheets.getRawValues(MONEY_SHEET_ID, `'${MONEY_TAB}'!A2:K5000`);
   const { updates, appends } = planUpserts(existing, wanted);
   if (updates.length) await sheets.batchUpdateValues(MONEY_SHEET_ID, updates.map((u) => ({ range: `'${MONEY_TAB}'!A${u.row}:K${u.row}`, values: [u.values] })));

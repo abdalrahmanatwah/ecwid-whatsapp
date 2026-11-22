@@ -122,7 +122,7 @@ function h(tag, attrs, ...kids) {
 const fmt = (x) => Math.round(x || 0).toLocaleString('en-US');
 const money = (x, sign) => h('span', { class: 'num' }, (sign && x > 0 ? sign : '') + fmt(Math.abs(x)) + ' ج');
 const ICONS = { 'إعلانات': '📣', 'طلبات': '🛵', 'أكل وكافيهات': '☕', 'سوبر ماركت': '🛒', 'مواصلات وبنزين': '⛽', 'فواتير وشحن': '🧾',
-  'أونلاين واشتراكات': '💳', 'صحة': '💊', 'سحب كاش': '🏧', 'تحويلات': '↔️', 'دخل': '💰', 'مرتب': '💼', 'ربح 499K': '👟', 'نصيب الشركاء': '🤝', 'مش واضح': '❓', 'تاني': '•' };
+  'أونلاين واشتراكات': '💳', 'صحة': '💊', 'سحب كاش': '🏧', 'تحويلات': '↔️', 'دخل': '💰', 'مرتب': '💼', 'صافي 499K': '👟', 'ربح 499K': '👟', 'مش واضح': '❓', 'تاني': '•' };
 const icon = (c) => ICONS[c] || '•';
 const AR_MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
 const monthName = (k) => { const [y, m] = k.split('-'); return AR_MONTHS[m - 1] + ' ' + y; };
@@ -156,7 +156,12 @@ function render() {
   const all = DATA.tx;
   const months = [...new Set(all.map((t) => t.date.slice(0, 7)))].sort().reverse();
   if (!months.includes(month)) months.unshift(month);
-  const mt = all.filter((t) => t.date.startsWith(month));
+  // Fawry payments for ads fund the business ad account; 499K's daily net already
+  // takes the ad spend out, so they are shown apart, not as personal spending.
+  const BIZ = 'إعلانات';
+  const mtAll = all.filter((t) => t.date.startsWith(month));
+  const mt = mtAll.filter((t) => t.cat !== BIZ);
+  const bizOut = mtAll.filter((t) => t.cat === BIZ).reduce((s, t) => s + (t.out || 0), 0);
   const inSum = mt.reduce((s, t) => s + (t.in || 0), 0);
   const outSum = mt.reduce((s, t) => s + (t.out || 0), 0);
   const unclear = mt.filter((t) => t.type === 'مش واضح').length;
@@ -209,7 +214,7 @@ function render() {
 
   // Transactions.
   const qq = q.trim().toLowerCase();
-  const list = mt.filter((t) => (!catFilter || (t.cat || 'تاني') === catFilter) &&
+  const list = mtAll.filter((t) => (!catFilter || (t.cat || 'تاني') === catFilter) &&
       (!qq || (t.who + ' ' + t.cat + ' ' + t.source + ' ' + t.msg).toLowerCase().includes(qq)))
     .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
   const search = h('input', { type: 'search', placeholder: 'دوّر: طلبات، فوري، اسم، رقم…', value: q });
@@ -217,7 +222,7 @@ function render() {
   const listBox = h('div', {});
   function renderList() {
     const qq2 = q.trim().toLowerCase();
-    const items = mt.filter((t) => (!catFilter || (t.cat || 'تاني') === catFilter) &&
+    const items = mtAll.filter((t) => (!catFilter || (t.cat || 'تاني') === catFilter) &&
       (!qq2 || (t.who + ' ' + t.cat + ' ' + t.source + ' ' + t.msg).toLowerCase().includes(qq2)))
       .sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
     const gs = [];
@@ -245,6 +250,7 @@ function render() {
     listBox);
 
   $('#app').replaceChildren(...[chips, hero, bals,
+    bizOut ? h('div', { class: 'note', style: 'text-align:start;padding:10px 4px 0' }, '📣 اتدفع للإعلانات من فوري الشهر ده: ', money(bizOut), ' — مش محسوب هنا، لأنه متخصم أصلاً من صافي 499K اليومي.') : null,
     unclear ? h('div', { class: 'warn' }, unclear + ' رسالة ما اتقريتش كويس الشهر ده — معلّمة "مش واضح" تحت.') : null,
     catPanel, daysPanel, listPanel,
     h('p', { class: 'note' }, 'كل رسالة من البنك أو فودافون كاش بتظهر هنا لوحدها. تعديل التصنيف بيتعمل من الشيت.')].filter(Boolean));
