@@ -16,6 +16,7 @@ import { sheetSyncRouter } from './sheet_sync.js';
 import { markAuto } from './auto_marks.js';
 import { runEcwidManualMessages, manualMessagesStatus } from './ecwid_manual_msgs.js';
 import { qpEcwidRouter } from './qp_ecwid.js';
+import { moneyWebhookRouter, moneyDashboardRouter } from './money.js';
 import { salesPageRouter, pageUrl, extraLinks, createExtraLink, revokeExtraLink, ensureExtraLink } from './sales_page.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -24,6 +25,9 @@ app.use(express.json({ limit: '10mb' }));
 
 // Public read-only sales page behind a private link (/s/<slug>, no login).
 app.use('/s', salesPageRouter);
+
+// Personal money log: bank / Vodafone Cash SMS forwarded from the owner's phone (token-protected).
+app.use('/webhooks/money', moneyWebhookRouter);
 
 // Social proof: customer photos under the product gallery (widget.js + photos.json public; /admin gated).
 app.use('/social-proof', socialProofRouter);
@@ -63,6 +67,7 @@ app.get('/', (_req, res) => res.send('Ecwid → WhatsApp order confirmation: run
  * Both the page and its API are behind Basic Auth (DASHBOARD_PASSWORD)*
  * ------------------------------------------------------------------ */
 app.use('/dashboard/sheet-sync', requireAuth, sheetSyncRouter);
+app.use('/dashboard/money', requireAuth, moneyDashboardRouter);
 app.get('/dashboard/sales-page-link', requireAuth, (_req, res) => res.json({ url: pageUrl(), extra: extraLinks() }));
 // New private link to the same sales page (?name=...), sent on WhatsApp.
 app.get('/dashboard/sales-page-link/new', requireAuth, (req, res) => res.json(createExtraLink(req.query.name || undefined)));

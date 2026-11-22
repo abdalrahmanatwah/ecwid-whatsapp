@@ -258,6 +258,24 @@ delivered → `DELIVERED` + `PAID`, returned → `RETURNED` + `CANCELLED`.
 - `/dashboard/qp-ecwid/run` — run now; `/dashboard/qp-ecwid/status` — last run
 - `QP_ECWID_SYNC=false` turns it off
 
+## Personal money log (bank / Vodafone Cash SMS → Google Sheet)
+
+A separate, personal sheet: every bank or Vodafone Cash SMS on the owner's
+Android phone is forwarded here and becomes one row (date, source, in/out,
+amount, other side, category, balance after). Card/account/phone numbers are
+masked to their last 4 digits. Codes (OTP) and offers are ignored; messages it
+can't read are still logged as "مش واضح".
+
+1. Create an empty Google Sheet and share it (Editor) with the service account.
+2. Render env: `MONEY_SHEET_ID`, `MONEY_TOKEN` (any long random string),
+   optionally `MONEY_SENDERS` (e.g. `VF-Cash,CIB,NBE`).
+3. On the phone, install **SMS to URL Forwarder**, add a rule per sender:
+   URL `https://<service>/webhooks/money?token=<MONEY_TOKEN>`, method POST,
+   template `{"from":"%from%","text":"%text%","sentStamp":"%sentStamp%"}`.
+
+- `/dashboard/money/status`: what was logged lately, last error.
+- `/dashboard/money/test?from=VF-Cash&text=…`: how a message is read (nothing written).
+
 ## Configuration reference
 
 | Variable | Meaning |
