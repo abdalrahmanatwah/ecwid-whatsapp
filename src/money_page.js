@@ -16,13 +16,19 @@ const toISO = (v) => {
   m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : '';
 };
+// The sheet turns "12:39" into a time value (a fraction of a day).
+const toTime = (v) => {
+  if (typeof v !== 'number') return String(v || '');
+  const mins = Math.round((v % 1) * 1440);
+  return `${String(Math.floor(mins / 60) % 24).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+};
 const n = (v) => (v === '' || v == null ? null : Number(String(v).replace(/,/g, '')) || 0);
 
 export async function moneyData() {
   if (!SHEET_ID) throw new Error('MONEY_SHEET_ID not set');
   const rows = await sheets.getRawValues(SHEET_ID, `'${TAB}'!A2:J5000`);
   const tx = (rows || []).filter((r) => r && r[0]).map((r) => ({
-    date: toISO(r[0]), time: String(r[1] || ''), source: String(r[2] || ''), type: String(r[3] || ''),
+    date: toISO(r[0]), time: toTime(r[1]), source: String(r[2] || ''), type: String(r[3] || ''),
     in: n(r[4]), out: n(r[5]), who: String(r[6] || ''), cat: String(r[7] || ''), bal: n(r[8]), msg: String(r[9] || ''),
   })).filter((t) => t.date);
   return { updatedAt: new Date().toISOString(), tx };
