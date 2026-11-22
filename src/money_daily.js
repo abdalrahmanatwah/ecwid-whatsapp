@@ -41,8 +41,15 @@ export function planUpserts(existing, wanted) {
   for (const w of wanted) {
     const cur = at.get(w[10]);
     if (!cur) { appends.push(w); continue; }
-    const same = Number(cur.r[4] || 0) === Number(w[4] || 0) && Number(cur.r[5] || 0) === Number(w[5] || 0);
+    const same = Number(cur.r[4] || 0) === Number(w[4] || 0) && Number(cur.r[5] || 0) === Number(w[5] || 0) && (!w[0] || !cur.r[0] || typeof cur.r[0] === 'number' || String(cur.r[0]) === w[0]);
     if (!same) updates.push({ row: cur.row, values: w });
   }
   return { updates, appends };
+}
+
+export const PARTNERS_CAT = 'نصيب الشركاء';
+// The partners' share for a month (from the "نسب الشركاء" tab: their % of the
+// month's net profit after ads and all costs) as one expense row, kept current.
+export function partnersRow(month, date, amount) {
+  return [date, '23:59', '499K', 'مصروف', '', amount, 'الشركاء', PARTNERS_CAT, '', `'نصيب الشركاء من صافي ربح 499K شهر ${month}`, `partners:${month}`];
 }
