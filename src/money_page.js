@@ -244,10 +244,10 @@ function render() {
     h('div', { class: 'tools' }, search, catFilter ? h('button', { on: { click: () => { catFilter = null; render(); } } }, 'كل التصنيفات') : null),
     listBox);
 
-  $('#app').replaceChildren(chips, hero, bals,
+  $('#app').replaceChildren(...[chips, hero, bals,
     unclear ? h('div', { class: 'warn' }, unclear + ' رسالة ما اتقريتش كويس الشهر ده — معلّمة "مش واضح" تحت.') : null,
     catPanel, daysPanel, listPanel,
-    h('p', { class: 'note' }, 'كل رسالة من البنك أو فودافون كاش بتظهر هنا لوحدها. تعديل التصنيف بيتعمل من الشيت.'));
+    h('p', { class: 'note' }, 'كل رسالة من البنك أو فودافون كاش بتظهر هنا لوحدها. تعديل التصنيف بيتعمل من الشيت.')].filter(Boolean));
 }
 
 load();
