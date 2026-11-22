@@ -25,3 +25,12 @@ test('upsert: same id and amount → nothing; changed amount → update; new →
   assert.deepEqual(updates.map((u) => u.row), [3]);
   assert.deepEqual(appends.map((a) => a[10]), ['499k:2026-11-18']);
 });
+
+test('daily tab row and upsert', async () => {
+  const { dailyRow, planDaily, ordersByDay } = await import('../src/money_daily.js');
+  assert.deepEqual(dailyRow('2026-11-20', 3, 10000, 2000, 0.245), ['2026-11-20', 3, 10000, 2000, 8000, 1960, 6040, 'day:2026-11-20']);
+  const ex = [dailyRow('2026-11-20', 3, 10000, 2000, 0.245)];
+  const p = planDaily(ex, [dailyRow('2026-11-20', 4, 12000, 2000, 0.245), dailyRow('2026-11-21', 1, 900, 300, 0.245)]);
+  assert.deepEqual([p.updates.length, p.appends.length], [1, 1]);
+  assert.deepEqual(ordersByDay([[46342, 0, 0, 0, 0, 0, 0, 0, 0, 890], [46342, 0, 0, 0, 0, 0, 0, 0, 0, '-']], serialToDate), { '2026-11-16': 1 });
+});
