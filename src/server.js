@@ -17,6 +17,7 @@ import { markAuto } from './auto_marks.js';
 import { runEcwidManualMessages, manualMessagesStatus } from './ecwid_manual_msgs.js';
 import { qpEcwidRouter } from './qp_ecwid.js';
 import { moneyWebhookRouter, moneyDashboardRouter } from './money.js';
+import { moneyData, MONEY_HTML } from './money_page.js';
 import { salesPageRouter, pageUrl, extraLinks, createExtraLink, revokeExtraLink, ensureExtraLink } from './sales_page.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -67,6 +68,10 @@ app.get('/', (_req, res) => res.send('Ecwid → WhatsApp order confirmation: run
  * Both the page and its API are behind Basic Auth (DASHBOARD_PASSWORD)*
  * ------------------------------------------------------------------ */
 app.use('/dashboard/sheet-sync', requireAuth, sheetSyncRouter);
+app.get('/dashboard/money', requireAuth, (_req, res) => res.type('html').set('Cache-Control', 'no-store').send(MONEY_HTML));
+app.get('/dashboard/money/data.json', requireAuth, async (_req, res) => {
+  try { res.set('Cache-Control', 'no-store').json(await moneyData()); } catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.use('/dashboard/money', requireAuth, moneyDashboardRouter);
 app.get('/dashboard/sales-page-link', requireAuth, (_req, res) => res.json({ url: pageUrl(), extra: extraLinks() }));
 // New private link to the same sales page (?name=...), sent on WhatsApp.
