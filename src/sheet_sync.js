@@ -19,7 +19,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Router } from 'express';
 import * as sheets from './google_sheets.js';
-import { profitByDay, profitRow, salaryRow, planUpserts } from './money_daily.js';
+import { profitByDay, profitRow, salaryRow, partnersRow, planUpserts } from './money_daily.js';
 import { listRecentDeliveries, probeListing, deliveryShape } from './bosta_list.js';
 import { getDeliveryState, bostaConfigured } from './bosta.js';
 import { allQpOrders } from './qp_orders.js';
@@ -389,6 +389,19 @@ async function syncPersonalMoney(tabs) {
   const salary = Number(process.env.MONEY_SALARY || 0);
   const salaryDay = Number(process.env.MONEY_SALARY_DAY || 1);
   if (salary > 0 && Number(today.slice(8, 10)) >= salaryDay && `${month}-01` >= start.slice(0, 7) + '-01') wanted.push(salaryRow(month, salaryDay, salary));
+  // Partners' share of each month's net profit (what the partners tab shows), as an expense.
+  const prow = await sheets.getRawValues(SHEET_ID, `'نسب الشركاء'!A9:E80`).catch(() => []);
+  for (const r of prow || []) {
+    const name = String(r?.[0] || '');
+    const mi = MONTHS_AR.findIndex((n) => name.startsWith(n + ' '));
+    const yy = Number(name.split(' ')[1]);
+    const share = Math.round((Number(r?.[4]) || 0) * 100) / 100;
+    if (mi < 0 || !yy || share <= 0) continue;
+    const key = `${yy}-${String(mi + 1).padStart(2, '0')}`;
+    if (key < start.slice(0, 7)) continue;
+    const last = new Date(Date.UTC(yy, mi + 1, 0)).toISOString().slice(0, 10);
+    wanted.push(partnersRow(key, today < last ? today : last, share));
+  }
   const existing = await sheets.getRawValues(MONEY_SHEET_ID, `'${MONEY_TAB}'!A2:K5000`);
   const { updates, appends } = planUpserts(existing, wanted);
   if (updates.length) await sheets.batchUpdateValues(MONEY_SHEET_ID, updates.map((u) => ({ range: `'${MONEY_TAB}'!A${u.row}:K${u.row}`, values: [u.values] })));

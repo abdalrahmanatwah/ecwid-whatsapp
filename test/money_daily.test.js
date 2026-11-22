@@ -16,3 +16,11 @@ test('upsert: same id and amount → nothing; changed amount → update; new →
   assert.deepEqual(updates.map((u) => u.row), [3]);
   assert.deepEqual(appends.map((a) => a[10]), ['499k:2026-11-18']);
 });
+
+test('partners row is an expense and is updated when the share changes', async () => {
+  const { partnersRow } = await import('../src/money_daily.js');
+  const r = partnersRow('2026-11', '2026-11-22', 5164);
+  assert.deepEqual([r[3], r[5], r[7], r[10]], ['مصروف', 5164, 'نصيب الشركاء', 'partners:2026-11']);
+  const { updates } = planUpserts([r], [partnersRow('2026-11', '2026-11-23', 5300)]);
+  assert.equal(updates.length, 1);
+});
