@@ -37,3 +37,13 @@ test('codes and offers are ignored; unreadable money messages are kept as unclea
 test('masking keeps the last 4 digits of long numbers only', () => {
   assert.equal(maskNumbers('card 4111 1111 1111 1234, amount 350'), 'card ****1234, amount 350');
 });
+
+test('real messages: Al Ahly instant transfer, Vodafone Cash transfer with fee and ad tail', () => {
+  const a = p('BanK-AlAhly', 'تم تنفيذ تحويل لحظي من حسابكم رقم 0100 بمبلغ 500.00 جم إلى AMAL M****** M****** H****** رقم مرجعي 469064469959 يوم 11-22 الساعة 16:19 للمزيد اتصل بـ 19623');
+  assert.deepEqual([a.kind, a.dir, a.amount, a.source, a.category], ['tx', 'out', 500, 'البنك الأهلي', 'تحويلات']);
+  assert.equal(a.counterparty, 'AMAL M****** M****** H******');
+  const v = p('VF-Cash', 'تم تحويل 2335 جنيه لرقم 01069949365 مصاريف الخدمة 1 جنيه رصيد حسابك فى فودافون كاش الحالي 1311.58.\nتاريخ العملية 12:39 26-11-22 :\nرقم العملية 026052499293 :\n حول فلوس لأي محفظة وزود فرصك تكسب جنيه دهب! وكمان هيجيلك لحد 100ج كاش باك. http://vf.eg/vfcash?id=money_transfer');
+  assert.deepEqual([v.dir, v.amount, v.fee, v.balance, v.counterparty, v.category], ['out', 2336, 1, 1311.58, '****9365', 'تحويلات']);
+  assert.ok(!v.text.includes('http'));
+  assert.equal(p('VF-Cash', 'جدد باقة Flex من خلال فودافون كاش قبل ما تخلص').kind, 'ignore');
+});
