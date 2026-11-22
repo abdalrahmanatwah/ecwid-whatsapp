@@ -38,6 +38,8 @@ const OUT_WORDS = [
 ];
 
 const BALANCE_RE2 = new RegExp(`(?:الرصيد|رصيد)[^\\d\\n]{0,45}?(?:الحالي|المتاح|المتبقي|الجديد)\\s*:?\\s*${CUR}?\\s*${AMT}`, 'i');
+// Al Ahly debit: "… المتاح 33938.75EGP".
+const BALANCE_RE3 = new RegExp(`(?:^|\\s)(?:المتاح|available)\\s*:?\\s*${CUR}?\\s*${AMT}`, 'i');
 const BALANCE_RE = new RegExp(`(?:الرصيد(?:\\s+(?:الحالي|المتاح|المتبقي|الجديد))?|رصيدك(?:\\s+(?:الحالي|المتاح))?|(?:available\\s+)?balance|bal\\.?|avl\\.?\\s*bal)\\s*(?:هو|is|:)?\\s*${CUR}?\\s*${AMT}`, 'i');
 
 function findAmount(t) {
@@ -80,7 +82,7 @@ function counterparty(t) {
   for (const re of pats) {
     const m = t.match(re);
     if (!m) continue;
-    const v = m[1].replace(STOP, '').trim().split(/\s+/).slice(0, 4).join(' ');
+    const v = m[1].replace(STOP, '').replace(/^(?:التاجر|المتجر|merchant)\s+/i, '').trim().split(/\s+/).slice(0, 4).join(' ');
     if (!v || /^(?:حساب|حسابك|بطاقتك|كارت|card|your|account|EGP|LE|جنيه|ج\.?م)/i.test(v) || /^\d{1,7}(?:[.,]\d+)?$/.test(v)) continue;
     return maskNumbers(v).slice(0, 60);
   }
@@ -137,7 +139,7 @@ export function parseMoneySms(from, rawText) {
   const source = sourceOf(from, text);
   const masked = maskNumbers(text);
   if (!text) return { kind: 'ignore', source, text: masked };
-  const bal = text.match(BALANCE_RE) || text.match(BALANCE_RE2);
+  const bal = text.match(BALANCE_RE) || text.match(BALANCE_RE2) || text.match(BALANCE_RE3);
   const balance = bal ? num(bal[1]) : null;
   // Read the amount with the balance part blanked out, so "رصيدك 900" is never taken as the amount.
   const noBal = bal ? text.slice(0, bal.index) + ' '.repeat(bal[0].length) + text.slice(bal.index + bal[0].length) : text;
