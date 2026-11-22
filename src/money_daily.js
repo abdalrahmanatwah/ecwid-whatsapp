@@ -1,5 +1,5 @@
 // Feeds the personal money sheet ("فلوسي") from the business:
-//  - one income row per day with 499K's net for the day: profit on the orders
+//  - one row per day, in its own table beside the transactions, with 499K's net: profit on the orders
 //    delivered that day (month tab column J: after shipping and wholesale)
 //    minus that day's Meta ad spend, minus the partners' share (their % from
 //    the partners tab, from their start date). The Fawry payments that fund the
@@ -61,8 +61,9 @@ export function planUpserts(existing, wanted) {
 }
 
 
-// The "الربح اليومي" tab: one row per day with the breakdown.
-export const DAILY_TAB = 'الربح اليومي';
+// The daily-profit table: columns M:T of the "الحركات" tab, beside the
+// transactions (A:K), one row per day with the breakdown.
+export const DAILY_RANGE = { first: 'M', last: 'T' };
 export const DAILY_HEADERS = ['التاريخ', 'عدد الأوردرات', 'ربح الأوردرات', 'الإعلانات', 'الصافي قبل الشركاء', 'نصيب الشركاء', 'الصافي ليك', 'id'];
 
 export function ordersByDay(rows, serialToDate) {

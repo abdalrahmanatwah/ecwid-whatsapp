@@ -19,7 +19,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Router } from 'express';
 import * as sheets from './google_sheets.js';
-import { profitByDay, profitRow, salaryRow, planUpserts, ordersByDay, dailyRow, planDaily, DAILY_TAB, DAILY_HEADERS } from './money_daily.js';
+import { profitByDay, salaryRow, planUpserts, ordersByDay, dailyRow, planDaily, DAILY_HEADERS } from './money_daily.js';
 import { listRecentDeliveries, probeListing, deliveryShape } from './bosta_list.js';
 import { getDeliveryState, bostaConfigured } from './bosta.js';
 import { allQpOrders } from './qp_orders.js';
@@ -396,7 +396,6 @@ async function syncPersonalMoney(tabs) {
       if (d < start || d > today || !d.startsWith(key)) continue; // today's row keeps updating through the day
       const p = profit[d] || 0, a = (ads[d] || 0) * (1 + tax);
       if (!p && !a) continue;
-      wanted.push(profitRow(d, p, a, d >= pStart ? pct : 0));
       daily.push(dailyRow(d, orders[d], p, a, d >= pStart ? pct : 0));
     }
   }
@@ -406,20 +405,16 @@ async function syncPersonalMoney(tabs) {
   const existing = await sheets.getRawValues(MONEY_SHEET_ID, `'${MONEY_TAB}'!A2:K5000`);
   const { updates, appends } = planUpserts(existing, wanted);
   if (updates.length) await sheets.batchUpdateValues(MONEY_SHEET_ID, updates.map((u) => ({ range: `'${MONEY_TAB}'!A${u.row}:K${u.row}`, values: [u.values] })));
-  if (appends.length) await sheets.appendValues(MONEY_SHEET_ID, `'${MONEY_TAB}'!A1:K1`, appends);
-  // The daily breakdown tab.
-  const mtabs = await sheets.getTabs(MONEY_SHEET_ID);
-  let dtab = mtabs.find((t) => t.title === DAILY_TAB);
-  if (!dtab) {
-    await sheets.batchUpdate(MONEY_SHEET_ID, [{ addSheet: { properties: { title: DAILY_TAB, index: 1, rightToLeft: true, gridProperties: { frozenRowCount: 1 } } } }]);
-    await sheets.updateValues(MONEY_SHEET_ID, `'${DAILY_TAB}'!A1:H1`, [DAILY_HEADERS]);
-  }
+  if (appends.length) await sheets.appendValues(MONEY_SHEET_ID, `'${MONEY_TAB}'!A1:K1`, appends, { overwrite: true });
+  // The daily breakdown table: الحركات!M:T, beside the transactions.
+  const head = await sheets.getRawValues(MONEY_SHEET_ID, `'${MONEY_TAB}'!M1:T1`);
+  if (!head?.[0]?.[0]) await sheets.updateValues(MONEY_SHEET_ID, `'${MONEY_TAB}'!M1:T1`, [DAILY_HEADERS]);
   daily.sort((a, b) => a[0].localeCompare(b[0]));
-  const dExisting = dtab ? await sheets.getRawValues(MONEY_SHEET_ID, `'${DAILY_TAB}'!A2:H2000`) : [];
+  const dExisting = await sheets.getRawValues(MONEY_SHEET_ID, `'${MONEY_TAB}'!M2:T2000`);
   const dp = planDaily(dExisting, daily);
-  if (dp.updates.length) await sheets.batchUpdateValues(MONEY_SHEET_ID, dp.updates.map((u) => ({ range: `'${DAILY_TAB}'!A${u.row}:H${u.row}`, values: [u.values] })));
-  if (dp.appends.length) await sheets.appendValues(MONEY_SHEET_ID, `'${DAILY_TAB}'!A1:H1`, dp.appends);
-  return { days: wanted.length, updated: updates.length, added: appends.length, dailyTab: { updated: dp.updates.length, added: dp.appends.length } };
+  if (dp.updates.length) await sheets.batchUpdateValues(MONEY_SHEET_ID, dp.updates.map((u) => ({ range: `'${MONEY_TAB}'!M${u.row}:T${u.row}`, values: [u.values] })));
+  if (dp.appends.length) await sheets.appendValues(MONEY_SHEET_ID, `'${MONEY_TAB}'!M1:T1`, dp.appends, { overwrite: true });
+  return { days: wanted.length, updated: updates.length, added: appends.length, daily: { updated: dp.updates.length, added: dp.appends.length } };
 }
 
 function cairoToday() {
