@@ -58,3 +58,8 @@ test('Fawry payments count as ads', () => {
   const r = p('BanK-AlAhly', 'تم خصم مبلغ EGP 10,122.00 من بطاقتكم رقم 8502 لدى My fawry يوم 22-11 الساعة 12:26');
   assert.deepEqual([r.kind, r.dir, r.amount, r.category, r.source], ['tx', 'out', 10122, 'إعلانات', 'البنك الأهلي']);
 });
+
+test('Al Ahly debit card: balance after "المتاح", merchant without "التاجر"', () => {
+  const r = p('BanK-AlAhly', 'تم خصم 10122 EGP من بطاقة الخصم المباشر رقم 8502 عند My fawry يوم 22/11/26 الساعه 18:59 المتاح 33938.75EGP للمزيد إتصل ب 19623');
+  assert.deepEqual([r.dir, r.amount, r.balance, r.counterparty, r.category], ['out', 10122, 33938.75, 'My fawry', 'إعلانات']);
+});
