@@ -60,3 +60,36 @@ export function planUpserts(existing, wanted) {
   return { updates, appends };
 }
 
+
+// The "الربح اليومي" tab: one row per day with the breakdown.
+export const DAILY_TAB = 'الربح اليومي';
+export const DAILY_HEADERS = ['التاريخ', 'عدد الأوردرات', 'ربح الأوردرات', 'الإعلانات', 'الصافي قبل الشركاء', 'نصيب الشركاء', 'الصافي ليك', 'id'];
+
+export function ordersByDay(rows, serialToDate) {
+  const out = {};
+  for (const r of rows || []) {
+    if (typeof r?.[0] !== 'number' || typeof r[9] !== 'number') continue;
+    const d = serialToDate(r[0]);
+    out[d] = (out[d] || 0) + 1;
+  }
+  return out;
+}
+
+export function dailyRow(date, orders, profit, ads, pct) {
+  const { before, partners, net } = dayNet(profit, ads, pct);
+  return [date, orders || 0, round2(profit || 0), round2(ads || 0), before, partners, net, `day:${date}`];
+}
+
+// Same as planUpserts, for the daily tab (id in column H, compares C..G).
+export function planDaily(existing, wanted) {
+  const at = new Map();
+  (existing || []).forEach((r, i) => { if (r?.[7]) at.set(String(r[7]), { row: i + 2, r }); });
+  const updates = [], appends = [];
+  for (const w of wanted) {
+    const cur = at.get(w[7]);
+    if (!cur) { appends.push(w); continue; }
+    const same = [1, 2, 3, 4, 5, 6].every((i) => Number(cur.r[i] || 0) === Number(w[i] || 0));
+    if (!same) updates.push({ row: cur.row, values: w });
+  }
+  return { updates, appends };
+}
