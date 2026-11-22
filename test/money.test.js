@@ -18,7 +18,7 @@ test('bank card purchase (English) and Arabic debit', () => {
   const a = p('CIB', 'Your card ending 1234 was charged EGP 350.00 at CARREFOUR MAADI on 22/11. Avl Bal EGP 12,400.00');
   assert.deepEqual([a.dir, a.amount, a.balance, a.counterparty, a.category], ['out', 350, 12400, 'CARREFOUR MAADI', 'سوبر ماركت']);
   const b = p('NBE', 'تم خصم مبلغ 1500 ج.م من حسابك رقم 1234567890123 لدى TALABAT بتاريخ 22/11 الرصيد المتاح 8000 ج.م');
-  assert.deepEqual([b.dir, b.amount, b.balance, b.counterparty, b.category], ['out', 1500, 8000, 'TALABAT', 'أكل وكافيهات']);
+  assert.deepEqual([b.dir, b.amount, b.balance, b.counterparty, b.category], ['out', 1500, 8000, 'TALABAT', 'طلبات']);
 });
 
 test('Arabic digits, salary, InstaPay in', () => {
@@ -52,4 +52,9 @@ test('OTP for a purchase in progress is ignored even though it carries the amoun
   const r = p('BanK-AlAhly', 'راجع هذا الكود سرى 224700. يرجى عدم مشاركته مع أي شخص آخر، وهو مخصص لعملية الشراء التي تقوم بها الآن بمبلغ EGP 10,122.00 عند التاجر My fawry في 22.11.2026 12:25 بالبطاقة رقم 8502');
   assert.equal(r.kind, 'ignore');
   assert.equal(p('NBE', 'تم خصم مبلغ 300 جنيه لدى مطعم سريع الرصيد المتاح 100').kind, 'tx');
+});
+
+test('Fawry payments count as ads', () => {
+  const r = p('BanK-AlAhly', 'تم خصم مبلغ EGP 10,122.00 من بطاقتكم رقم 8502 لدى My fawry يوم 22-11 الساعة 12:26');
+  assert.deepEqual([r.kind, r.dir, r.amount, r.category, r.source], ['tx', 'out', 10122, 'إعلانات', 'البنك الأهلي']);
 });

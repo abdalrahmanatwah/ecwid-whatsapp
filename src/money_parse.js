@@ -89,11 +89,14 @@ function counterparty(t) {
 
 // Rough categories from the shop / message words. Edit freely.
 const CATEGORIES = [
-  ['أكل وكافيهات', /talabat|طلبات|elmenus|mcdonald|kfc|pizza|burger|cafe|coffee|starbucks|costa|مطعم|كافيه|بيتزا|كشري/i],
+  // Ads are mostly paid through Fawry (merchant "My fawry"); Meta charges too.
+  ['إعلانات', /fawry|فوري|facebook|meta\b|fb\s*ads|ميتا|فيسبوك/i],
+  ['طلبات', /talabat|طلبات/i],
+  ['أكل وكافيهات', /elmenus|mcdonald|kfc|pizza|burger|cafe|coffee|starbucks|costa|مطعم|كافيه|بيتزا|كشري/i],
   ['سوبر ماركت', /carrefour|كارفور|spinneys|سبينيز|metro\b|مترو ماركت|hyper|seoudi|سعودي|kazyon|كازيون|خير زمان|oscar|أوسكار|ماركت|market/i],
   ['مواصلات وبنزين', /uber|careem|indrive|swvl|didi|bolt|اوبر|كريم|بنزين|fuel|petrol|wataniya|وطنية|total ?energies|misr petroleum|mobil|chillout/i],
-  ['فواتير وشحن', /vodafone|فودافون|orange|اورنج|etisalat|اتصالات|we\b|وي\b|كهرباء|غاز|مياه|electricity|water|internet|انترنت|fawry|فوري|شحن رصيد|recharge/i],
-  ['أونلاين واشتراكات', /amazon|noon|jumia|apple|google|netflix|spotify|shahid|شاهد|facebook|meta|anthropic|claude|openai|render|ecwid/i],
+  ['فواتير وشحن', /vodafone|فودافون|orange|اورنج|etisalat|اتصالات|we\b|وي\b|كهرباء|غاز|مياه|electricity|water|internet|انترنت|شحن رصيد|recharge/i],
+  ['أونلاين واشتراكات', /amazon|noon|jumia|apple|google|netflix|spotify|shahid|شاهد|anthropic|claude|openai|render|ecwid/i],
   ['صحة', /pharmacy|صيدلية|seif|العزبي|el ?ezaby|hospital|مستشفى|clinic|عيادة|lab|معمل/i],
   ['سحب كاش', /سحب|atm|withdraw/i],
   ['تحويلات', /تحويل|instapay|انستا ?باي|transfer|محفظة|wallet/i],
@@ -109,7 +112,7 @@ export function sourceOf(from, text) {
   if (/vodafone\s*cash|فودافون\s*كاش|VF-?Cash|^vf\b/i.test(s)) return 'فودافون كاش';
   if (/instapay|انستا ?باي/i.test(s)) return 'InstaPay';
   const banks = [['CIB', /\bcib\b/i], ['البنك الأهلي', /\bnbe\b|الأهلي|الاهلي|ahly|alahly/i], ['بنك مصر', /banque\s*misr|\bbm\b|بنك مصر/i],
-    ['QNB', /\bqnb\b/i], ['بنك القاهرة', /banque\s*du\s*caire|\bbdc\b|القاهرة/i], ['HSBC', /hsbc/i], ['ADIB', /adib/i], ['AAIB', /aaib/i], ['Fawry', /fawry|فوري/i]];
+    ['QNB', /\bqnb\b/i], ['بنك القاهرة', /banque\s*du\s*caire|\bbdc\b|القاهرة/i], ['HSBC', /hsbc/i], ['ADIB', /adib/i], ['AAIB', /aaib/i], ['Fawry', /^fawry|^فوري/i]];
   for (const [name, re] of banks) if (re.test(s)) return name;
   return String(from || 'غير معروف').slice(0, 30);
 }
