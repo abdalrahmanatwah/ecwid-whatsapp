@@ -16,10 +16,11 @@ const num = (s) => {
   return Number.isFinite(n) ? n : null;
 };
 
-// Card / account / wallet numbers: keep the last 4 digits only.
+// Card / account / wallet / phone / reference numbers (10+ digits): keep the last 4.
+// Dates and times ("12:39 26-11-22") stay as they are.
 export const maskNumbers = (s) => String(s || '').replace(/\d[\d*xX\- ]{6,}\d/g, (m) => {
   const digits = m.replace(/\D/g, '');
-  return digits.length >= 8 ? `****${digits.slice(-4)}` : m;
+  return digits.length >= 10 ? `****${digits.slice(-4)}` : m;
 });
 
 const CUR = '(?:EGP|LE|L\\.E\\.?|E\\.?G\\.?P|ج\\.?م\\.?|جنيه(?:ا|اً)?|جم)';
@@ -36,6 +37,7 @@ const OUT_WORDS = [
   /debited|purchase|withdraw|payment|paid|spent|transfer(?:red)?\s+to|charged|pos\b|atm\b/i,
 ];
 
+const BALANCE_RE2 = new RegExp(`(?:الرصيد|رصيد)[^\\d\\n]{0,45}?(?:الحالي|المتاح|المتبقي|الجديد)\\s*:?\\s*${CUR}?\\s*${AMT}`, 'i');
 const BALANCE_RE = new RegExp(`(?:الرصيد(?:\\s+(?:الحالي|المتاح|المتبقي|الجديد))?|رصيدك(?:\\s+(?:الحالي|المتاح))?|(?:available\\s+)?balance|bal\\.?|avl\\.?\\s*bal)\\s*(?:هو|is|:)?\\s*${CUR}?\\s*${AMT}`, 'i');
 
 function findAmount(t) {
@@ -68,7 +70,7 @@ function direction(t) {
   return i < o ? 'in' : 'out';
 }
 
-const STOP = /\s+(?:رصيد\S*|الرصيد\S*|بنجاح|بتاريخ|يوم|في|على|عن|on|to|your|at|via|بقيمة|بمبلغ|balance|avl|ref|رقم\s+العملية)(?=\s|$).*$/i;
+const STOP = /\s+(?:رصيد\S*|الرصيد\S*|بنجاح|بتاريخ|يوم|في|على|عن|on|to|your|at|via|بقيمة|بمبلغ|balance|avl|ref|مصاريف|رسوم|عمولة|رقم\s+(?:العملية|مرجعي)|fees?)(?=\s|$).*$/i;
 function counterparty(t) {
   const pats = [
     /(?:لدى|لدي|عند|\bat\b|@)\s+([^\n,،.]+)/i,
@@ -106,7 +108,7 @@ export function sourceOf(from, text) {
   const s = `${from} ${text}`;
   if (/vodafone\s*cash|فودافون\s*كاش|VF-?Cash|^vf\b/i.test(s)) return 'فودافون كاش';
   if (/instapay|انستا ?باي/i.test(s)) return 'InstaPay';
-  const banks = [['CIB', /\bcib\b/i], ['البنك الأهلي', /\bnbe\b|الأهلي|الاهلي|ahly/i], ['بنك مصر', /banque\s*misr|\bbm\b|بنك مصر/i],
+  const banks = [['CIB', /\bcib\b/i], ['البنك الأهلي', /\bnbe\b|الأهلي|الاهلي|ahly|alahly/i], ['بنك مصر', /banque\s*misr|\bbm\b|بنك مصر/i],
     ['QNB', /\bqnb\b/i], ['بنك القاهرة', /banque\s*du\s*caire|\bbdc\b|القاهرة/i], ['HSBC', /hsbc/i], ['ADIB', /adib/i], ['AAIB', /aaib/i], ['Fawry', /fawry|فوري/i]];
   for (const [name, re] of banks) if (re.test(s)) return name;
   return String(from || 'غير معروف').slice(0, 30);
@@ -116,20 +118,33 @@ export function sourceOf(from, text) {
 const NOT_MONEY = /(?:OTP|كود التحقق|رمز التحقق|كلمة السر|verification code|password|\bcode\b|لا تشارك|do not share|عرض|offer|خصم\s+\d+\s*%)/i;
 
 // → { kind: 'tx' | 'ignore' | 'unclear', dir, amount, balance, counterparty, category, source, text }
+// Ads glued to the end of wallet messages ("حول فلوس لأي محفظة وزود فرصك…", links).
+const PROMO_TAIL = /\s*(?:حول فلوس لأي|جدد باقة|اشترك|استمتع|كمان هيجيلك|https?:\/\/|vf\.eg\/).*$/i;
+const FEE_RE = new RegExp(`(?:مصاريف(?:\\s+ال)?خدمة|رسوم|عمولة|fees?)\\s*:?\\s*${AMT}\\s*${CUR}?`, 'i');
+
 export function parseMoneySms(from, rawText) {
-  const text = toLatinDigits(rawText).replace(/\s+/g, ' ').trim();
+  const full = toLatinDigits(rawText).replace(/\s+/g, ' ').trim();
+  // A message that is only an ad starts with the promo words: keep it whole, it gets ignored below.
+  const cut = full.replace(PROMO_TAIL, '').trim();
+  const text = cut || full;
   const source = sourceOf(from, text);
   const masked = maskNumbers(text);
   if (!text) return { kind: 'ignore', source, text: masked };
-  const bal = text.match(BALANCE_RE);
+  const bal = text.match(BALANCE_RE) || text.match(BALANCE_RE2);
   const balance = bal ? num(bal[1]) : null;
   // Read the amount with the balance part blanked out, so "رصيدك 900" is never taken as the amount.
   const noBal = bal ? text.slice(0, bal.index) + ' '.repeat(bal[0].length) + text.slice(bal.index + bal[0].length) : text;
   const amount = findAmount(noBal);
   if (/OTP|كود التحقق|رمز التحقق|verification code|لا تشارك|do not share/i.test(text)) return { kind: 'ignore', source, text: masked };
   if (NOT_MONEY.test(text) && !amount) return { kind: 'ignore', source, text: masked };
-  const dir = direction(noBal);
-  const value = amount?.value ?? null;
+  if (!cut && !amount) return { kind: 'ignore', source, text: masked };
+  // Service fee is read separately so it isn't taken as the amount, then added to money out.
+  const feeM = noBal.match(FEE_RE);
+  const fee = feeM ? num(feeM[1]) : 0;
+  const noFee = feeM ? noBal.replace(feeM[0], ' '.repeat(feeM[0].length)) : noBal;
+  const amt2 = findAmount(noFee) || amount;
+  const dir = direction(noFee);
+  const value = amt2?.value != null ? amt2.value + (dir === 'out' ? fee : 0) : null;
   if (value == null || !dir) return { kind: 'unclear', dir: dir || null, amount: value, balance, source, counterparty: counterparty(text), category: 'مش واضح', text: masked };
-  return { kind: 'tx', dir, amount: value, balance, counterparty: counterparty(text), category: categorize(text, dir), source, text: masked };
+  return { kind: 'tx', dir, amount: value, balance, counterparty: counterparty(text), category: categorize(text.replace(/فودافون\s*كاش|vodafone\s*cash/gi, ''), dir), fee: fee || undefined, source, text: masked };
 }
