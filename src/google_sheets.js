@@ -136,10 +136,12 @@ export async function batchUpdateValues(spreadsheetId, data) {
   return call('POST', `${API}/${spreadsheetId}/values:batchUpdate`, { valueInputOption: 'USER_ENTERED', data });
 }
 
-export async function appendValues(spreadsheetId, range, values) {
+// overwrite: write under the table without inserting whole sheet rows (use when
+// another table sits beside this one on the same tab, so it doesn't shift).
+export async function appendValues(spreadsheetId, range, values, { overwrite = false } = {}) {
   return call(
     'POST',
-    `${API}/${spreadsheetId}/values/${enc(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
+    `${API}/${spreadsheetId}/values/${enc(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=${overwrite ? 'OVERWRITE' : 'INSERT_ROWS'}`,
     { values }
   );
 }

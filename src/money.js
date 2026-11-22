@@ -72,7 +72,7 @@ export async function ingest({ from = '', text = '', sentStamp } = {}) {
   if (parsed.kind === 'ignore') return { skipped: 'not a money message', source: parsed.source };
   await ensureTab();
   const row = rowFor(parsed, cairoParts(sentStamp), id);
-  await sheets.appendValues(SHEET_ID, `'${TAB}'!A1:K1`, [row]);
+  await sheets.appendValues(SHEET_ID, `'${TAB}'!A1:K1`, [row], { overwrite: true }); // the daily-profit table sits beside it (M:T)
   st.seen[id] = Date.now();
   st.recent = [{ at: new Date().toISOString(), id, kind: parsed.kind, dir: parsed.dir, amount: parsed.amount, source: parsed.source }, ...(st.recent || [])].slice(0, 30);
   saveState(st);

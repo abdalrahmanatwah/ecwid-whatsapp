@@ -31,7 +31,12 @@ export async function moneyData() {
     date: toISO(r[0]), time: toTime(r[1]), source: String(r[2] || ''), type: String(r[3] || ''),
     in: n(r[4]), out: n(r[5]), who: String(r[6] || ''), cat: String(r[7] || ''), bal: n(r[8]), msg: String(r[9] || ''),
   })).filter((t) => t.date);
-  return { updatedAt: new Date().toISOString(), tx };
+  // 499K's daily net: its own table beside the transactions (M:T).
+  const drows = await sheets.getRawValues(SHEET_ID, `'${TAB}'!M2:S2000`).catch(() => []);
+  const days = (drows || []).filter((r) => r && r[0]).map((r) => ({
+    date: toISO(r[0]), orders: n(r[1]) || 0, profit: n(r[2]) || 0, ads: n(r[3]) || 0, before: n(r[4]) || 0, partners: n(r[5]) || 0, net: n(r[6]) || 0,
+  })).filter((d) => d.date);
+  return { updatedAt: new Date().toISOString(), tx, days };
 }
 
 export const MONEY_HTML = `<!doctype html>
@@ -98,6 +103,7 @@ h2 small{color:var(--muted);font-weight:400;font-size:12px}
 .flag{display:inline-block;background:var(--warn-soft);color:var(--warn);border-radius:6px;padding:0 6px;font-size:11px;margin-inline-start:6px}
 .warn{background:var(--warn-soft);color:var(--warn);border-radius:12px;padding:10px 12px;font-size:13px;margin-top:14px}
 .empty,.note{color:var(--muted);font-size:13px;text-align:center;padding:18px 0}
+.biz{font-size:13px}.biz .bh,.biz .br{display:grid;grid-template-columns:1.4fr .6fr 1fr 1fr 1fr 1fr;white-space:nowrap;gap:6px;padding:8px 0;border-bottom:1px solid var(--line);align-items:center}.biz .bh{color:var(--muted);font-size:11px}.biz .br:last-child{border-bottom:0}.biz .num{font-size:12px}
 .err{background:var(--out-soft);color:var(--out);padding:14px;border-radius:12px;margin-top:14px}
 @media (max-width:420px){.hero .net{font-size:34px}.pill .v{font-size:19px}}
 </style>
@@ -154,7 +160,7 @@ function lastBalance(source) {
 
 function render() {
   const all = DATA.tx;
-  const months = [...new Set(all.map((t) => t.date.slice(0, 7)))].sort().reverse();
+  const months = [...new Set([...all, ...(DATA.days || [])].map((t) => t.date.slice(0, 7)))].sort().reverse();
   if (!months.includes(month)) months.unshift(month);
   // Fawry payments for ads fund the business ad account; 499K's daily net already
   // takes the ad spend out, so they are shown apart, not as personal spending.
@@ -162,8 +168,10 @@ function render() {
   const mtAll = all.filter((t) => t.date.startsWith(month));
   const mt = mtAll.filter((t) => t.cat !== BIZ);
   const bizOut = mtAll.filter((t) => t.cat === BIZ).reduce((s, t) => s + (t.out || 0), 0);
-  const inSum = mt.reduce((s, t) => s + (t.in || 0), 0);
-  const outSum = mt.reduce((s, t) => s + (t.out || 0), 0);
+  const md = (DATA.days || []).filter((d) => d.date.startsWith(month)).sort((a, b) => b.date.localeCompare(a.date));
+  const bizNet = md.reduce((s, d) => s + d.net, 0);
+  const inSum = mt.reduce((s, t) => s + (t.in || 0), 0) + Math.max(0, bizNet);
+  const outSum = mt.reduce((s, t) => s + (t.out || 0), 0) + Math.max(0, -bizNet);
   const unclear = mt.filter((t) => t.type === 'مش واضح').length;
 
   const chips = h('div', { class: 'months' }, months.map((m) => h('button', { class: 'chip' + (m === month ? ' on' : ''),
@@ -182,6 +190,17 @@ function render() {
       h('div', { class: 'w' }, b ? 'آخر رسالة ' + new Date(b.date + 'T12:00:00').toLocaleDateString('ar-EG', { day: 'numeric', month: 'short' }) + ' ' + b.time : 'لسه مفيش رسالة فيها رصيد'));
   };
   const bals = h('section', { class: 'bals' }, balBox('رصيد فودافون كاش', 'فودافون كاش'), balBox('رصيد البنك الأهلي', 'البنك الأهلي'));
+
+  // 499K day by day (its own table in the sheet).
+  const bizPanel = md.length ? h('section', { class: 'panel' },
+    h('h2', {}, '👟 صافي 499K يوم بيوم', h('small', {}, 'الشهر: ', money(bizNet))),
+    h('div', { class: 'biz' },
+      h('div', { class: 'bh' }, h('span', {}, 'اليوم'), h('span', {}, 'أوردرات'), h('span', {}, 'ربح'), h('span', {}, 'إعلانات'), h('span', {}, 'الشركاء'), h('span', {}, 'ليك')),
+      md.map((d) => h('div', { class: 'br' },
+        h('span', {}, new Date(d.date + 'T12:00:00').toLocaleDateString('ar-EG', { weekday: 'short', day: 'numeric' })),
+        h('span', { class: 'num' }, d.orders), h('span', { class: 'num' }, fmt(d.profit)), h('span', { class: 'num' }, fmt(d.ads)), h('span', { class: 'num' }, fmt(d.partners)),
+        h('b', { class: 'num', style: 'color:var(' + (d.net >= 0 ? '--in' : '--out') + ')' }, (d.net < 0 ? '−' : '') + fmt(Math.abs(d.net)))))),
+    h('div', { class: 'note', style: 'text-align:start;padding:10px 0 0' }, 'بالجنيه. ليك = ربح الأوردرات − الإعلانات − نصيب الشركاء.')) : null;
 
   // Spending by category.
   const byCat = {};
@@ -252,7 +271,7 @@ function render() {
   $('#app').replaceChildren(...[chips, hero, bals,
     bizOut ? h('div', { class: 'note', style: 'text-align:start;padding:10px 4px 0' }, '📣 اتدفع للإعلانات من فوري الشهر ده: ', money(bizOut), ' — مش محسوب هنا، لأنه متخصم أصلاً من صافي 499K اليومي.') : null,
     unclear ? h('div', { class: 'warn' }, unclear + ' رسالة ما اتقريتش كويس الشهر ده — معلّمة "مش واضح" تحت.') : null,
-    catPanel, daysPanel, listPanel,
+    bizPanel, catPanel, daysPanel, listPanel,
     h('p', { class: 'note' }, 'كل رسالة من البنك أو فودافون كاش بتظهر هنا لوحدها. تعديل التصنيف بيتعمل من الشيت.')].filter(Boolean));
 }
 
