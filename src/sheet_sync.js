@@ -19,6 +19,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { Router } from 'express';
 import * as sheets from './google_sheets.js';
+import { profitByDay, profitRow, salaryRow, planUpserts } from './money_daily.js';
 import { listRecentDeliveries, probeListing, deliveryShape } from './bosta_list.js';
 import { getDeliveryState, bostaConfigured } from './bosta.js';
 import { allQpOrders } from './qp_orders.js';
@@ -366,6 +367,35 @@ async function fillBostaFees(items, state) {
 
 const AD_TAX_CELL = `${q(ASSUMPTIONS)}!$B$16`;
 
+const MONEY_SHEET_ID = process.env.MONEY_SHEET_ID || '';
+const MONEY_TAB = 'الحركات';
+async function syncPersonalMoney(tabs) {
+  if (!MONEY_SHEET_ID) return { skipped: 'MONEY_SHEET_ID not set' };
+  const today = cairoToday();
+  const month = today.slice(0, 7);
+  const [y, m] = month.split('-').map(Number);
+  const prev = `${m === 1 ? y - 1 : y}-${String(m === 1 ? 12 : m - 1).padStart(2, '0')}`;
+  const start = process.env.MONEY_PROFIT_START || '2026-11-01';
+  const wanted = [];
+  for (const key of [prev, month]) {
+    const tab = findMonthTab(tabs, key);
+    if (!tab) continue;
+    const layout = await readLayout(tab.title);
+    const rows = await sheets.getRawValues(SHEET_ID, `${q(tab.title)}!A${FIRST_DATA_ROW}:J${layout.total - 1}`);
+    for (const [d, p] of Object.entries(profitByDay(rows, serialToDate))) {
+      if (d >= start && d <= today && d.startsWith(key) && p) wanted.push(profitRow(d, p));
+    }
+  }
+  const salary = Number(process.env.MONEY_SALARY || 0);
+  const salaryDay = Number(process.env.MONEY_SALARY_DAY || 1);
+  if (salary > 0 && Number(today.slice(8, 10)) >= salaryDay && `${month}-01` >= start.slice(0, 7) + '-01') wanted.push(salaryRow(month, salaryDay, salary));
+  const existing = await sheets.getRawValues(MONEY_SHEET_ID, `'${MONEY_TAB}'!A2:K5000`);
+  const { updates, appends } = planUpserts(existing, wanted);
+  if (updates.length) await sheets.batchUpdateValues(MONEY_SHEET_ID, updates.map((u) => ({ range: `'${MONEY_TAB}'!A${u.row}:K${u.row}`, values: [u.values] })));
+  if (appends.length) await sheets.appendValues(MONEY_SHEET_ID, `'${MONEY_TAB}'!A1:K1`, appends);
+  return { days: wanted.length, updated: updates.length, added: appends.length };
+}
+
 function cairoToday() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Cairo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
@@ -711,9 +741,19 @@ export async function runSheetSync({ force = false, dryRun = DRY_RUN } = {}) {
       layoutCache = null;
     }
 
+    // Personal money sheet: daily 499K profit + outside salary (never blocks the rest).
+    let personal;
+    try {
+      personal = dryRun ? { skipped: 'dry run' } : await syncPersonalMoney(tabsNow);
+    } catch (e) {
+      personal = { error: e.message };
+      console.warn('[sheet] personal money sync failed:', e.message);
+    }
+
     const result = {
       at: new Date().toISOString(),
       dryRun,
+      personal,
       privateAuto,
       bostaSource,
       bostaComplete,
