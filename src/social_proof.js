@@ -114,9 +114,11 @@ socialProofRouter.get('/widget.js', cors, (req, res) => {
   const party = fs.readFileSync(path.join(__dirname, '..', 'public', 'cart-celebration.js'), 'utf8');
   // …and the site header on every page.
   const header = fs.readFileSync(path.join(__dirname, '..', 'public', 'site-header.js'), 'utf8');
+  // …and the trust block (delivery, promises, ways to pay) on product pages.
+  const trust = fs.readFileSync(path.join(__dirname, '..', 'public', 'product-trust.js'), 'utf8');
   res.type('application/javascript');
   res.set('Cache-Control', 'public, max-age=300');
-  res.send(src + '\n' + wa + '\n' + party + '\n' + header);
+  res.send(src + '\n' + wa + '\n' + party + '\n' + header + '\n' + trust);
 });
 
 socialProofRouter.get('/photos.json', cors, (_req, res) => {
