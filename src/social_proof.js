@@ -118,7 +118,7 @@ socialProofRouter.get('/widget.js', cors, (req, res) => {
   const trust = fs.readFileSync(path.join(__dirname, '..', 'public', 'product-trust.js'), 'utf8');
   res.type('application/javascript');
   res.set('Cache-Control', 'public, max-age=300');
-  res.send(src + '\n' + wa + '\n' + party + '\n' + header + '\n' + trust);
+  res.send(src + '\n' + wa + '\n' + party + '\n' + header); // trust block paused: froze product pages (insert/remove loop with Ecwid's renderer)
 });
 
 socialProofRouter.get('/photos.json', cors, (_req, res) => {
