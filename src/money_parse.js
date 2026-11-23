@@ -108,10 +108,17 @@ const CATEGORIES = [
 // Account(s) that receive 499K's courier collections (Bosta / QP payouts).
 const BIZ_ACCOUNTS = String(process.env.MONEY_BIZ_ACCOUNTS || '1010').split(',').map((s) => s.trim()).filter(Boolean);
 export const COLLECTION_CAT = 'تحصيل 499K';
+const IN_IS_BIZ = process.env.MONEY_IN_IS_BIZ !== '0';
 
 export function categorize(text, dir) {
-  if (dir === 'in' && BIZ_ACCOUNTS.some((a) => new RegExp(`لحساب\\s*(?:رقم\\s*)?${a}(?!\\d)`).test(text))) return COLLECTION_CAT;
-  if (dir === 'in') return /راتب|مرتب|salary/i.test(text) ? 'مرتب' : 'دخل';
+  if (dir === 'in') {
+    if (/راتب|مرتب|salary/i.test(text)) return 'مرتب';
+    // The owner's only incoming money besides the salary is 499K's: customers
+    // paying by InstaPay / Vodafone Cash, and Bosta / QP payouts. Set
+    // MONEY_IN_IS_BIZ=0 to go back to plain "دخل".
+    if (IN_IS_BIZ || BIZ_ACCOUNTS.some((a) => new RegExp(`لحساب\\s*(?:رقم\\s*)?${a}(?!\\d)`).test(text))) return COLLECTION_CAT;
+    return 'دخل';
+  }
   for (const [name, re] of CATEGORIES) if (re.test(text)) return name;
   return 'تاني';
 }

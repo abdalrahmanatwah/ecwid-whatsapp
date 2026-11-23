@@ -276,7 +276,7 @@ function render() {
 
   $('#app').replaceChildren(...[chips, hero, bals,
     bizOut ? h('div', { class: 'note', style: 'text-align:start;padding:10px 4px 0' }, '📣 اتدفع للإعلانات من فوري الشهر ده: ', money(bizOut), ' — مش محسوب هنا، لأنه متخصم أصلاً من صافي 499K اليومي.') : null,
-    collIn ? h('div', { class: 'note', style: 'text-align:start;padding:6px 4px 0' }, '📦 تحصيل 499K من بوسطة و QP الشهر ده: ', money(collIn), ' — مش محسوب دخل شخصي، لأن ربحه محسوب في صافي 499K اليومي.') : null,
+    collIn ? h('div', { class: 'note', style: 'text-align:start;padding:6px 4px 0' }, '📦 تحصيل 499K الشهر ده (بوسطة و QP وتحويلات العملاء): ', money(collIn), ' — مش محسوب دخل شخصي، لأن ربحه محسوب في صافي 499K اليومي.') : null,
     unclear ? h('div', { class: 'warn' }, unclear + ' رسالة ما اتقريتش كويس الشهر ده — معلّمة "مش واضح" تحت.') : null,
     h('div', { class: 'cols' }, catPanel, daysPanel),
     h('div', { class: 'cols' }, listPanel, bizPanel),
