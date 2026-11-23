@@ -77,11 +77,22 @@
   }
   function clear() { var x = document.querySelector('.k499-trust'); if (x) x.remove(); }
 
-  var onProduct = false, obs = null;
+  // Ecwid re-renders parts of the page (size picked, etc.) and can drop the
+  // block. Put it back — but debounced and at most a few times per page, so an
+  // insert/remove fight with Ecwid's renderer can never lock up the page.
+  var onProduct = false, obs = null, timer = null, reinserts = 0, MAX_REINSERTS = 4;
+  function stopWatching() { if (obs) { obs.disconnect(); obs = null; } clearTimeout(timer); }
   function watch() {
-    if (obs) obs.disconnect();
-    // Ecwid re-renders parts of the page (size picked, etc.): put the block back if it goes.
-    obs = new MutationObserver(function () { if (onProduct && !document.querySelector('.k499-trust')) place(); });
+    stopWatching();
+    obs = new MutationObserver(function () {
+      if (!onProduct || timer) return;
+      timer = setTimeout(function () {
+        timer = null;
+        if (!onProduct || document.querySelector('.k499-trust')) return;
+        if (++reinserts > MAX_REINSERTS) { stopWatching(); return; }
+        place();
+      }, 400);
+    });
     obs.observe(document.body, { childList: true, subtree: true });
   }
 
@@ -93,11 +104,15 @@
     Ecwid.OnPageLoaded.add(function (page) {
       onProduct = String((page && page.type) || '') === 'PRODUCT';
       clear();
+      stopWatching();
+      reinserts = 0;
       if (!onProduct) return;
       var n = 0;
-      (function tryPlace() { if (!place() && n++ < 20) setTimeout(tryPlace, 250); })();
+      (function tryPlace() {
+        if (place()) { watch(); return; }
+        if (n++ < 20) setTimeout(tryPlace, 250);
+      })();
     });
-    watch();
   }
   hook(0);
 })();
