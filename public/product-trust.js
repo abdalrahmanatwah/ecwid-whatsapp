@@ -22,8 +22,12 @@
   var PAY_TITLE = 'ادفع بأمان عن طريق';
   // [label, logo file name in public/pay/ without extension]. A method shows its
   // logo once the official file is there; until then, its name.
-  var PAY = [['كاش عند الاستلام', 'cod'], ['فودافون كاش', 'vodafone-cash'], ['InstaPay', 'instapay'], ['Visa', 'visa'],
-    ['Mastercard', 'mastercard'], ['ميزة', 'meeza'], ['valU', 'valu'], ['تقسيط مع أي بنك', 'installments']];
+  // Optional 3rd item: the brand's published mark (Wikimedia copies of the files from
+  // Visa's / Mastercard's brand centers) — used until a file is added to public/pay/.
+  var PAY = [['كاش عند الاستلام', 'cod'], ['فودافون كاش', 'vodafone-cash'], ['InstaPay', 'instapay'],
+    ['Visa', 'visa', 'https://upload.wikimedia.org/wikipedia/commons/5/5c/Visa_Inc._logo_(2021%E2%80%93present).svg'],
+    ['Mastercard', 'mastercard', 'https://upload.wikimedia.org/wikipedia/commons/a/a4/Mastercard_2019_logo.svg'],
+    ['ميزة', 'meeza'], ['valU', 'valu'], ['تقسيط مع أي بنك', 'installments']];
   var BASE = 'https://ecwid-whatsapp.onrender.com';
   // ---------------------------------------------------------------------------
 
@@ -95,7 +99,7 @@
       }).join('') + '</div>' +
       '<div class="bd">' + BADGES.map(function (b) { return '<div>' + icon(b[0], 20) + '<span>' + esc(b[1]) + '</span></div>'; }).join('') + '</div>' +
       '<div class="pay"><div class="pt">' + esc(PAY_TITLE) + '</div>' +
-      '<div class="pm">' + PAY.map(function (p) { return '<span data-logo="' + p[1] + '">' + esc(p[0]) + '</span>'; }).join('') + '</div></div>';
+      '<div class="pm">' + PAY.map(function (p) { return '<span data-logo="' + p[1] + '"' + (p[2] ? ' data-src="' + esc(p[2]) + '"' : '') + '>' + esc(p[0]) + '</span>'; }).join('') + '</div></div>';
     swapLogos(el);
     return el;
   }
@@ -109,10 +113,14 @@
       for (var i = 0; i < spans.length; i++) {
         var key = spans[i].getAttribute('data-logo');
         var f = files.filter(function (x) { return x.replace(/\.[^.]+$/, '') === key; })[0];
-        if (!f) continue;
-        var label = spans[i].textContent;
-        spans[i].classList.add('lg');
-        spans[i].innerHTML = '<img src="' + BASE + '/social-proof/pay/' + f + '" alt="' + esc(label) + '" title="' + esc(label) + '">';
+        var src = f ? BASE + '/social-proof/pay/' + f : spans[i].getAttribute('data-src');
+        if (!src) continue;
+        (function (span, label) {
+          var img = new Image();
+          img.alt = label; img.title = label;
+          img.onload = function () { span.classList.add('lg'); span.textContent = ''; span.appendChild(img); };
+          img.src = src; // if it fails to load, the name just stays
+        })(spans[i], spans[i].textContent);
       }
     });
   }
