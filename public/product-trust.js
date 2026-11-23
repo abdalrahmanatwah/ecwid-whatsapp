@@ -84,6 +84,7 @@
       // Narrow product column (the theme's sidebar is ~300px): icon above the label.
       R + '.pm span.lg{padding:4px 8px;display:inline-flex;align-items:center;height:32px}' +
       R + '.pm span.lg img{display:block;height:20px;width:auto;max-width:64px;object-fit:contain}' +
+      R + '.pm span.lg[data-logo=instapay] img{height:26px}' +
       '@container (max-width:380px){' + R + '.bd div{flex-direction:column;gap:6px;padding:14px 6px;font-size:13px}' + R + '.row{padding:14px}' + R + '.tt{font-size:14px}}' +
       '@media (max-width:420px){' + R + '.bd div{font-size:13px;gap:7px;padding:14px 6px}' + R + '.row{padding:14px}}';
     document.head.appendChild(st);
