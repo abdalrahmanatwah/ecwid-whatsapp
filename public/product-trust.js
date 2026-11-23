@@ -8,9 +8,11 @@
   window.__k499Trust = true;
 
   // ---- Copy -----------------------------------------------------------------
-  var SAME_DAY = 'توصيل في نفس اليوم للقاهرة والجيزة';
-  var DELIVERY_BOLD = 'باقي المحافظات: التوصيل خلال 2 إلى 7 أيام.';
-  var DELIVERY_REST = 'المندوب هيكلمك قبل التوصيل.';
+  var DELIVERY = [
+    // [icon, title, detail]
+    ['bolt', 'توصيل في نفس اليوم', 'القاهرة والجيزة'],
+    ['truck', 'باقي المحافظات خلال 2 – 7 أيام', 'المندوب هيكلمك قبل التوصيل'],
+  ];
   var BADGES = [
     ['shield', 'ضمان الجودة'],
     ['swap', 'استبدال 14 يوم'],
@@ -39,21 +41,30 @@
     if (document.getElementById('k499-trust-css')) return;
     var st = document.createElement('style');
     st.id = 'k499-trust-css';
+    var R = '.k499-trust ';
     st.textContent =
-      '.k499-trust{container-type:inline-size;direction:rtl;font-family:' + FONT + ';color:#2b2a27;margin:18px 0 6px;clear:both}' +
-      '.k499-trust .tb{display:flex;align-items:center;gap:12px;background:#f3eee6;border-radius:16px;padding:14px 18px;font-size:15px;line-height:1.6}' +
-      '.k499-trust .tb svg{flex:none;color:#2b2a27}' +
-      '.k499-trust .tb b{font-weight:700}' +
-      '.k499-trust .sd{display:inline-flex;align-items:center;gap:6px;background:#1f7a4d;color:#fff;font-weight:700;font-size:13.5px;border-radius:999px;padding:4px 12px;margin-bottom:6px;white-space:nowrap}' +
-      '.k499-trust .sd svg{color:#fff}' +
-      '.k499-trust .bd{display:grid;grid-template-columns:repeat(4,1fr);gap:10px 6px;margin:16px 0 4px;font-size:15px;font-weight:600}' +
-      '.k499-trust .bd span{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:4px;white-space:nowrap}' +
-      '.k499-trust .bd svg{color:#55524b}' +
-      '.k499-trust .pt{text-align:center;color:#8a857b;font-size:13px;margin:14px 0 8px}' +
-      '.k499-trust .pm{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}' +
-      '.k499-trust .pm span{border:1px solid #e4dfd3;background:#fff;border-radius:10px;padding:6px 11px;font-size:13px;font-weight:600;color:#3d3a34;white-space:nowrap}' +
-      '@container (max-width:640px){.k499-trust .bd{grid-template-columns:1fr 1fr}}' +
-      '@media (max-width:640px){.k499-trust .bd{grid-template-columns:1fr 1fr;font-size:14px}.k499-trust .tb{font-size:14px}}';
+      // Reset whatever the store theme puts on divs/spans inside the product column.
+      '.k499-trust,.k499-trust *{box-sizing:border-box;margin:0;padding:0;line-height:1.45;letter-spacing:normal;text-transform:none;font-family:' + FONT + '}' +
+      '.k499-trust{direction:rtl;text-align:right;color:#24221e;margin:26px 0 8px;clear:both;display:flex;flex-direction:column;gap:22px}' +
+      // Delivery card: two clean rows with a hairline between.
+      R + '.dl{background:#f5f1ea;border:1px solid #ece5d9;border-radius:18px;padding:6px 18px}' +
+      R + '.row{display:flex;align-items:center;gap:14px;padding:14px 0}' +
+      R + '.row+.row{border-top:1px solid #e6dfd2}' +
+      R + '.ic{flex:none;width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:#fff;color:#24221e;border:1px solid #ece5d9}' +
+      R + '.row.hot .ic{background:#1f7a4d;border-color:#1f7a4d;color:#fff}' +
+      R + '.tt{display:block;font-size:15.5px;font-weight:700}' +
+      R + '.row.hot .tt{color:#1f7a4d}' +
+      R + '.dd{display:block;font-size:13.5px;color:#7a7468;margin-top:2px}' +
+      // Promises: 2×2 tiles.
+      R + '.bd{display:grid;grid-template-columns:1fr 1fr;gap:10px}' +
+      R + '.bd div{display:flex;align-items:center;gap:10px;border:1px solid #ece5d9;border-radius:14px;padding:12px 14px;font-size:14.5px;font-weight:600;background:#fff}' +
+      R + '.bd svg{flex:none;color:#6b665c}' +
+      // Ways to pay.
+      R + '.pt{display:flex;align-items:center;gap:12px;color:#8a857b;font-size:13px;font-weight:600}' +
+      R + '.pt:before,' + R + '.pt:after{content:"";flex:1;height:1px;background:#ece5d9}' +
+      R + '.pm{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:12px}' +
+      R + '.pm span{display:inline-block;border:1px solid #e6e1d6;background:#fff;border-radius:999px;padding:6px 14px;font-size:13px;font-weight:600;color:#3d3a34;white-space:nowrap}' +
+      '@media (max-width:420px){' + R + '.bd div{font-size:13.5px;padding:11px 10px;gap:8px}' + R + '.tt{font-size:14.5px}}';
     document.head.appendChild(st);
   }
 
@@ -61,10 +72,13 @@
     var el = document.createElement('div');
     el.className = 'k499-trust';
     el.innerHTML =
-      '<div class="tb">' + icon('truck', 30) + '<div><div class="sd">' + icon('bolt', 16) + esc(SAME_DAY) + '</div><b>' + esc(DELIVERY_BOLD) + '</b> ' + esc(DELIVERY_REST) + '</div></div>' +
-      '<div class="bd">' + BADGES.map(function (b) { return '<span>' + icon(b[0], 20) + esc(b[1]) + '</span>'; }).join('') + '</div>' +
-      '<div class="pt">' + esc(PAY_TITLE) + '</div>' +
-      '<div class="pm">' + PAY.map(function (p) { return '<span>' + esc(p) + '</span>'; }).join('') + '</div>';
+      '<div class="dl">' + DELIVERY.map(function (d, i) {
+        return '<div class="row' + (i === 0 ? ' hot' : '') + '"><span class="ic">' + icon(d[0], 20) + '</span>' +
+          '<span><span class="tt">' + esc(d[1]) + '</span><span class="dd">' + esc(d[2]) + '</span></span></div>';
+      }).join('') + '</div>' +
+      '<div class="bd">' + BADGES.map(function (b) { return '<div>' + icon(b[0], 20) + '<span>' + esc(b[1]) + '</span></div>'; }).join('') + '</div>' +
+      '<div><div class="pt">' + esc(PAY_TITLE) + '</div>' +
+      '<div class="pm">' + PAY.map(function (p) { return '<span>' + esc(p) + '</span>'; }).join('') + '</div></div>';
     return el;
   }
 
