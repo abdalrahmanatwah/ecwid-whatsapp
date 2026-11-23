@@ -23,7 +23,11 @@
   var PAY = ['كاش عند الاستلام', 'فودافون كاش', 'InstaPay', 'Visa', 'Mastercard', 'ميزة', 'valU', 'تقسيط مع أي بنك'];
   // ---------------------------------------------------------------------------
 
-  var FONT = "'Changa', inherit"; // loaded by the social-proof script
+  // Same look as the store: DM Sans (the theme font) + a matching Arabic face,
+  // near-black on white, hairline borders, 4px corners like the Add to Bag button.
+  var FONT = '"DM Sans","IBM Plex Sans Arabic",system-ui,sans-serif';
+  var FONT_URL = 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap';
+  var INK = '#1b1b1b', MUTED = '#707070', LINE = '#e6e6e6', SOFT = '#f6f6f6';
   var ICONS = {
     bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
     truck: '<path d="M3 6h11v9H3zM14 9h4l3 3v3h-7z"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
@@ -39,32 +43,37 @@
 
   function css() {
     if (document.getElementById('k499-trust-css')) return;
+    if (!document.querySelector('link[href="' + FONT_URL + '"]')) {
+      var l = document.createElement('link'); l.rel = 'stylesheet'; l.href = FONT_URL; document.head.appendChild(l);
+    }
     var st = document.createElement('style');
     st.id = 'k499-trust-css';
     var R = '.k499-trust ';
     st.textContent =
       // Reset whatever the store theme puts on divs/spans inside the product column.
-      '.k499-trust,.k499-trust *{box-sizing:border-box;margin:0;padding:0;line-height:1.45;letter-spacing:normal;text-transform:none;font-family:' + FONT + '}' +
-      '.k499-trust{direction:rtl;text-align:right;color:#24221e;margin:26px 0 8px;clear:both;display:flex;flex-direction:column;gap:22px}' +
-      // Delivery card: two clean rows with a hairline between.
-      R + '.dl{background:#f5f1ea;border:1px solid #ece5d9;border-radius:18px;padding:6px 18px}' +
-      R + '.row{display:flex;align-items:center;gap:14px;padding:14px 0}' +
-      R + '.row+.row{border-top:1px solid #e6dfd2}' +
-      R + '.ic{flex:none;width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:#fff;color:#24221e;border:1px solid #ece5d9}' +
-      R + '.row.hot .ic{background:#1f7a4d;border-color:#1f7a4d;color:#fff}' +
-      R + '.tt{display:block;font-size:15.5px;font-weight:700}' +
-      R + '.row.hot .tt{color:#1f7a4d}' +
-      R + '.dd{display:block;font-size:13.5px;color:#7a7468;margin-top:2px}' +
-      // Promises: 2×2 tiles.
-      R + '.bd{display:grid;grid-template-columns:1fr 1fr;gap:10px}' +
-      R + '.bd div{display:flex;align-items:center;gap:10px;border:1px solid #ece5d9;border-radius:14px;padding:12px 14px;font-size:14.5px;font-weight:600;background:#fff}' +
-      R + '.bd svg{flex:none;color:#6b665c}' +
+      '.k499-trust,.k499-trust *{box-sizing:border-box;margin:0;padding:0;line-height:1.5;letter-spacing:normal;text-transform:none;font-family:' + FONT + '}' +
+      '.k499-trust{direction:rtl;text-align:right;color:' + INK + ';margin:28px 0 40px;clear:both;display:flex;flex-direction:column;gap:16px}' +
+      // Delivery: one bordered box, two rows.
+      R + '.dl{border:1px solid ' + LINE + ';border-radius:4px}' +
+      R + '.row{display:flex;align-items:center;gap:14px;padding:16px 18px}' +
+      R + '.row+.row{border-top:1px solid ' + LINE + '}' +
+      R + '.ic{flex:none;width:38px;height:38px;border-radius:4px;display:flex;align-items:center;justify-content:center;background:' + SOFT + ';color:' + INK + '}' +
+      R + '.row.hot .ic{background:' + INK + ';color:#fff}' +
+      R + '.tt{display:block;font-size:15px;font-weight:700}' +
+      R + '.dd{display:block;font-size:13px;color:' + MUTED + ';margin-top:1px}' +
+      // Promises: a 2×2 table with hairlines.
+      R + '.bd{display:grid;grid-template-columns:1fr 1fr;border:1px solid ' + LINE + ';border-radius:4px;overflow:hidden}' +
+      R + '.bd div{display:flex;align-items:center;justify-content:center;gap:9px;padding:15px 10px;font-size:14px;font-weight:600;text-align:center}' +
+      R + '.bd div:nth-child(odd){border-left:1px solid ' + LINE + '}' +
+      R + '.bd div:nth-child(-n+2){border-bottom:1px solid ' + LINE + '}' +
+      R + '.bd svg{flex:none;color:' + INK + '}' +
       // Ways to pay.
-      R + '.pt{display:flex;align-items:center;gap:12px;color:#8a857b;font-size:13px;font-weight:600}' +
-      R + '.pt:before,' + R + '.pt:after{content:"";flex:1;height:1px;background:#ece5d9}' +
-      R + '.pm{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:12px}' +
-      R + '.pm span{display:inline-block;border:1px solid #e6e1d6;background:#fff;border-radius:999px;padding:6px 14px;font-size:13px;font-weight:600;color:#3d3a34;white-space:nowrap}' +
-      '@media (max-width:420px){' + R + '.bd div{font-size:13.5px;padding:11px 10px;gap:8px}' + R + '.tt{font-size:14.5px}}';
+      R + '.pay{padding-top:8px}' +
+      R + '.pt{display:flex;align-items:center;gap:12px;color:' + MUTED + ';font-size:12.5px;font-weight:500}' +
+      R + '.pt:before,' + R + '.pt:after{content:"";flex:1;height:1px;background:' + LINE + '}' +
+      R + '.pm{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-top:12px}' +
+      R + '.pm span{display:inline-block;border:1px solid ' + LINE + ';border-radius:3px;padding:5px 11px;font-size:12.5px;font-weight:500;color:#3a3a3a;white-space:nowrap;background:#fff}' +
+      '@media (max-width:420px){' + R + '.bd div{font-size:13px;gap:7px;padding:14px 6px}' + R + '.row{padding:14px}}';
     document.head.appendChild(st);
   }
 
@@ -77,7 +86,7 @@
           '<span><span class="tt">' + esc(d[1]) + '</span><span class="dd">' + esc(d[2]) + '</span></span></div>';
       }).join('') + '</div>' +
       '<div class="bd">' + BADGES.map(function (b) { return '<div>' + icon(b[0], 20) + '<span>' + esc(b[1]) + '</span></div>'; }).join('') + '</div>' +
-      '<div><div class="pt">' + esc(PAY_TITLE) + '</div>' +
+      '<div class="pay"><div class="pt">' + esc(PAY_TITLE) + '</div>' +
       '<div class="pm">' + PAY.map(function (p) { return '<span>' + esc(p) + '</span>'; }).join('') + '</div></div>';
     return el;
   }
@@ -89,7 +98,16 @@
     if (document.querySelector('.k499-trust')) return true;
     for (var i = 0; i < ANCHORS.length; i++) {
       var a = document.querySelector(ANCHORS[i]);
-      if (a && a.parentNode) { css(); a.parentNode.insertBefore(build(), a.nextSibling); return true; }
+      if (a && a.parentNode) {
+        css();
+        var el = build();
+        // Same width as the Add to Bag button, so the column lines up.
+        var btn = a.querySelector('button, .form-control__button');
+        var w = btn && btn.getBoundingClientRect().width;
+        if (w > 200) el.style.maxWidth = Math.round(w) + 'px';
+        a.parentNode.insertBefore(el, a.nextSibling);
+        return true;
+      }
     }
     return false;
   }
