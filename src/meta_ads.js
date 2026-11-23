@@ -81,3 +81,25 @@ export async function adPost(adId) {
     instagram_media_id: j.creative?.effective_instagram_media_id || null,
   };
 }
+
+// Find ads in the account whose name contains `name` (case-insensitive) and
+// return each one's post ID.
+export async function adPostsByName(name) {
+  if (!TOKEN || !ACCOUNT) throw new Error('Meta not configured');
+  const q = String(name || '').trim().toLowerCase();
+  if (!q) throw new Error('name required');
+  const out = [];
+  let next = `https://graph.facebook.com/${VERSION}/act_${ACCOUNT}/ads?limit=200&fields=id,name,effective_status,campaign{name},adset{name},creative{effective_object_story_id,object_story_id}&access_token=${encodeURIComponent(TOKEN)}`;
+  for (let page = 0; next && page < 10; page++) {
+    const r = await fetch(next);
+    const j = await r.json();
+    if (!r.ok || j.error) throw new Error(j.error?.message || `HTTP ${r.status}`);
+    for (const a of j.data || []) {
+      if (!String(a.name || '').toLowerCase().includes(q)) continue;
+      const story = a.creative?.effective_object_story_id || a.creative?.object_story_id || null;
+      out.push({ ad_id: a.id, ad: a.name, status: a.effective_status, campaign: a.campaign?.name, adset: a.adset?.name, post_id: story ? story.split('_').pop() : null });
+    }
+    next = j.paging?.next || null;
+  }
+  return out;
+}
