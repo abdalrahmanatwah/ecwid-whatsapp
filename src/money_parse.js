@@ -64,6 +64,8 @@ function direction(t) {
   }, null);
   const i = firstHit(IN_WORDS);
   const o = firstHit(OUT_WORDS);
+  // Al Ahly: "تم اضافه تحويل EGP ... لحساب 1010" = money credited to your account.
+  if (/تم\s+[اإ]ضاف[ةه]/.test(t)) return 'in';
   if (i == null && o == null) return null;
   if (o == null) return 'in';
   if (i == null) return 'out';
