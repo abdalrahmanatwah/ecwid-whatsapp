@@ -105,7 +105,12 @@ const CATEGORIES = [
   ['سحب كاش', /سحب|atm|withdraw/i],
   ['تحويلات', /تحويل|instapay|انستا ?باي|transfer|محفظة|wallet/i],
 ];
+// Account(s) that receive 499K's courier collections (Bosta / QP payouts).
+const BIZ_ACCOUNTS = String(process.env.MONEY_BIZ_ACCOUNTS || '1010').split(',').map((s) => s.trim()).filter(Boolean);
+export const COLLECTION_CAT = 'تحصيل 499K';
+
 export function categorize(text, dir) {
+  if (dir === 'in' && BIZ_ACCOUNTS.some((a) => new RegExp(`لحساب\\s*(?:رقم\\s*)?${a}(?!\\d)`).test(text))) return COLLECTION_CAT;
   if (dir === 'in') return /راتب|مرتب|salary/i.test(text) ? 'مرتب' : 'دخل';
   for (const [name, re] of CATEGORIES) if (re.test(text)) return name;
   return 'تاني';

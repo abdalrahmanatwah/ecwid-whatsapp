@@ -130,7 +130,7 @@ function h(tag, attrs, ...kids) {
 }
 const fmt = (x) => Math.round(x || 0).toLocaleString('en-US');
 const money = (x, sign) => h('span', { class: 'num' }, (sign && x > 0 ? sign : '') + fmt(Math.abs(x)) + ' ج');
-const ICONS = { 'إعلانات': '📣', 'طلبات': '🛵', 'أكل وكافيهات': '☕', 'سوبر ماركت': '🛒', 'مواصلات وبنزين': '⛽', 'فواتير وشحن': '🧾',
+const ICONS = { 'إعلانات': '📣', 'تحصيل 499K': '📦', 'طلبات': '🛵', 'أكل وكافيهات': '☕', 'سوبر ماركت': '🛒', 'مواصلات وبنزين': '⛽', 'فواتير وشحن': '🧾',
   'أونلاين واشتراكات': '💳', 'صحة': '💊', 'سحب كاش': '🏧', 'تحويلات': '↔️', 'دخل': '💰', 'مرتب': '💼', 'صافي 499K': '👟', 'ربح 499K': '👟', 'مش واضح': '❓', 'تاني': '•' };
 const icon = (c) => ICONS[c] || '•';
 const AR_MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
@@ -167,10 +167,13 @@ function render() {
   if (!months.includes(month)) months.unshift(month);
   // Fawry payments for ads fund the business ad account; 499K's daily net already
   // takes the ad spend out, so they are shown apart, not as personal spending.
-  const BIZ = 'إعلانات';
+  // Courier collections (Bosta / QP payouts into the business account) are 499K
+  // money too: its profit is already counted in the daily net.
+  const BIZ = 'إعلانات', COLL = 'تحصيل 499K';
   const mtAll = all.filter((t) => t.date.startsWith(month));
-  const mt = mtAll.filter((t) => t.cat !== BIZ);
+  const mt = mtAll.filter((t) => t.cat !== BIZ && t.cat !== COLL);
   const bizOut = mtAll.filter((t) => t.cat === BIZ).reduce((s, t) => s + (t.out || 0), 0);
+  const collIn = mtAll.filter((t) => t.cat === COLL).reduce((s, t) => s + (t.in || 0), 0);
   const md = (DATA.days || []).filter((d) => d.date.startsWith(month)).sort((a, b) => b.date.localeCompare(a.date));
   const bizNet = md.reduce((s, d) => s + d.net, 0);
   const inSum = mt.reduce((s, t) => s + (t.in || 0), 0) + Math.max(0, bizNet);
@@ -273,6 +276,7 @@ function render() {
 
   $('#app').replaceChildren(...[chips, hero, bals,
     bizOut ? h('div', { class: 'note', style: 'text-align:start;padding:10px 4px 0' }, '📣 اتدفع للإعلانات من فوري الشهر ده: ', money(bizOut), ' — مش محسوب هنا، لأنه متخصم أصلاً من صافي 499K اليومي.') : null,
+    collIn ? h('div', { class: 'note', style: 'text-align:start;padding:6px 4px 0' }, '📦 تحصيل 499K من بوسطة و QP الشهر ده: ', money(collIn), ' — مش محسوب دخل شخصي، لأن ربحه محسوب في صافي 499K اليومي.') : null,
     unclear ? h('div', { class: 'warn' }, unclear + ' رسالة ما اتقريتش كويس الشهر ده — معلّمة "مش واضح" تحت.') : null,
     h('div', { class: 'cols' }, catPanel, daysPanel),
     h('div', { class: 'cols' }, listPanel, bizPanel),
