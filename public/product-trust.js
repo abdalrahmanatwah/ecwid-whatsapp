@@ -8,7 +8,8 @@
   window.__k499Trust = true;
 
   // ---- Copy -----------------------------------------------------------------
-  var DELIVERY_BOLD = 'التوصيل خلال 2 إلى 7 أيام.';
+  var SAME_DAY = 'توصيل في نفس اليوم للقاهرة والجيزة';
+  var DELIVERY_BOLD = 'باقي المحافظات: التوصيل خلال 2 إلى 7 أيام.';
   var DELIVERY_REST = 'المندوب هيكلمك قبل التوصيل.';
   var BADGES = [
     ['shield', 'ضمان الجودة'],
@@ -22,6 +23,7 @@
 
   var FONT = "'Changa', inherit"; // loaded by the social-proof script
   var ICONS = {
+    bolt: '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>',
     truck: '<path d="M3 6h11v9H3zM14 9h4l3 3v3h-7z"/><circle cx="7" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
     shield: '<path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/>',
     swap: '<path d="M4 9h13l-3-3M20 15H7l3 3"/>',
@@ -42,6 +44,8 @@
       '.k499-trust .tb{display:flex;align-items:center;gap:12px;background:#f3eee6;border-radius:16px;padding:14px 18px;font-size:15px;line-height:1.6}' +
       '.k499-trust .tb svg{flex:none;color:#2b2a27}' +
       '.k499-trust .tb b{font-weight:700}' +
+      '.k499-trust .sd{display:inline-flex;align-items:center;gap:6px;background:#1f7a4d;color:#fff;font-weight:700;font-size:13.5px;border-radius:999px;padding:4px 12px;margin-bottom:6px;white-space:nowrap}' +
+      '.k499-trust .sd svg{color:#fff}' +
       '.k499-trust .bd{display:grid;grid-template-columns:repeat(4,1fr);gap:10px 6px;margin:16px 0 4px;font-size:15px;font-weight:600}' +
       '.k499-trust .bd span{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:4px;white-space:nowrap}' +
       '.k499-trust .bd svg{color:#55524b}' +
@@ -57,7 +61,7 @@
     var el = document.createElement('div');
     el.className = 'k499-trust';
     el.innerHTML =
-      '<div class="tb">' + icon('truck', 30) + '<div><b>' + esc(DELIVERY_BOLD) + '</b> ' + esc(DELIVERY_REST) + '</div></div>' +
+      '<div class="tb">' + icon('truck', 30) + '<div><div class="sd">' + icon('bolt', 16) + esc(SAME_DAY) + '</div><b>' + esc(DELIVERY_BOLD) + '</b> ' + esc(DELIVERY_REST) + '</div></div>' +
       '<div class="bd">' + BADGES.map(function (b) { return '<span>' + icon(b[0], 20) + esc(b[1]) + '</span>'; }).join('') + '</div>' +
       '<div class="pt">' + esc(PAY_TITLE) + '</div>' +
       '<div class="pm">' + PAY.map(function (p) { return '<span>' + esc(p) + '</span>'; }).join('') + '</div>';
