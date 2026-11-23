@@ -60,3 +60,24 @@ export async function dailySpend(key) {
   for (const r of data.data || []) if (r.date_start) out[r.date_start] = Number(r.spend) || 0;
   return out;
 }
+
+// Read-only lookup of one ad: its post (page_id_post_id) so it can be reused
+// with "Use existing post" in another campaign, keeping likes and comments.
+export async function adPost(adId) {
+  if (!TOKEN) throw new Error('META_ADS_TOKEN not set');
+  if (!/^\d{6,25}$/.test(String(adId))) throw new Error('bad ad id');
+  const url = new URL(`https://graph.facebook.com/${VERSION}/${adId}`);
+  url.searchParams.set('fields', 'name,status,campaign{name},adset{name},creative{id,effective_object_story_id,object_story_id,effective_instagram_media_id}');
+  url.searchParams.set('access_token', TOKEN);
+  const r = await fetch(url);
+  const j = await r.json();
+  if (!r.ok || j.error) throw new Error(j.error?.message || `HTTP ${r.status}`);
+  const story = j.creative?.effective_object_story_id || j.creative?.object_story_id || null;
+  return {
+    ad: j.name, status: j.status, campaign: j.campaign?.name, adset: j.adset?.name,
+    creative_id: j.creative?.id || null,
+    post_id: story ? story.split('_').pop() : null,
+    page_post_id: story,
+    instagram_media_id: j.creative?.effective_instagram_media_id || null,
+  };
+}

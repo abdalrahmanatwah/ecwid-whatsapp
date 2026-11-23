@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { adPost } from './meta_ads.js';
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -70,6 +71,10 @@ app.get('/', (_req, res) => res.send('Ecwid → WhatsApp order confirmation: run
  * ------------------------------------------------------------------ */
 app.use('/dashboard/sheet-sync', requireAuth, sheetSyncRouter);
 // Are Bosta deliveries marked Delivered on Ecwid? ?days=21, &fix=1 to mark them.
+app.get('/dashboard/meta/ad-post', requireAuth, async (req, res) => {
+  try { res.json(await adPost(String(req.query.id || ''))); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.get('/dashboard/bosta-ecwid/check', requireAuth, async (req, res) => {
   try { res.json(await checkBostaEcwid({ days: Math.min(60, Number(req.query.days) || 21), fix: req.query.fix === '1' })); }
   catch (e) { res.status(500).json({ error: e.message }); }
