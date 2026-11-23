@@ -103,3 +103,15 @@ export async function adPostsByName(name) {
   }
   return out;
 }
+
+// Read-only: the full creative settings of one ad (to compare two ads).
+export async function adCreativeRaw(adId) {
+  if (!TOKEN) throw new Error('META_ADS_TOKEN not set');
+  if (!/^\d{6,25}$/.test(String(adId))) throw new Error('bad ad id');
+  const f = 'name,status,effective_status,campaign{name,daily_budget},adset{name,daily_budget,promoted_object,destination_type},creative{id,effective_object_story_id,object_type,call_to_action_type,degrees_of_freedom_spec,asset_feed_spec,object_story_spec,product_set_id,creative_sourcing_spec,contextual_multi_ads,format_transformation_spec}';
+  const url = `https://graph.facebook.com/${VERSION}/${adId}?fields=${encodeURIComponent(f)}&access_token=${encodeURIComponent(TOKEN)}`;
+  const r = await fetch(url);
+  const j = await r.json();
+  if (!r.ok || j.error) throw new Error(j.error?.message || `HTTP ${r.status}`);
+  return j;
+}
