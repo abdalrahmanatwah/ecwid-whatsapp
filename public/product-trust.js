@@ -20,7 +20,11 @@
     ['calendar', 'تقسيط لحد 6 شهور'],
   ];
   var PAY_TITLE = 'ادفع بأمان عن طريق';
-  var PAY = ['كاش عند الاستلام', 'فودافون كاش', 'InstaPay', 'Visa', 'Mastercard', 'ميزة', 'valU', 'تقسيط مع أي بنك'];
+  // [label, logo file name in public/pay/ without extension]. A method shows its
+  // logo once the official file is there; until then, its name.
+  var PAY = [['كاش عند الاستلام', 'cod'], ['فودافون كاش', 'vodafone-cash'], ['InstaPay', 'instapay'], ['Visa', 'visa'],
+    ['Mastercard', 'mastercard'], ['ميزة', 'meeza'], ['valU', 'valu'], ['تقسيط مع أي بنك', 'installments']];
+  var BASE = 'https://ecwid-whatsapp.onrender.com';
   // ---------------------------------------------------------------------------
 
   // Same look as the store: DM Sans (the theme font) + a matching Arabic face,
@@ -74,6 +78,8 @@
       R + '.pm{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-top:12px}' +
       R + '.pm span{display:inline-block;border:1px solid ' + LINE + ';border-radius:3px;padding:5px 11px;font-size:12.5px;font-weight:500;color:#3a3a3a;white-space:nowrap;background:#fff}' +
       // Narrow product column (the theme's sidebar is ~300px): icon above the label.
+      R + '.pm span.lg{padding:4px 8px;display:inline-flex;align-items:center;height:32px}' +
+      R + '.pm span.lg img{display:block;height:20px;width:auto;max-width:64px;object-fit:contain}' +
       '@container (max-width:380px){' + R + '.bd div{flex-direction:column;gap:6px;padding:14px 6px;font-size:13px}' + R + '.row{padding:14px}' + R + '.tt{font-size:14px}}' +
       '@media (max-width:420px){' + R + '.bd div{font-size:13px;gap:7px;padding:14px 6px}' + R + '.row{padding:14px}}';
     document.head.appendChild(st);
@@ -89,8 +95,26 @@
       }).join('') + '</div>' +
       '<div class="bd">' + BADGES.map(function (b) { return '<div>' + icon(b[0], 20) + '<span>' + esc(b[1]) + '</span></div>'; }).join('') + '</div>' +
       '<div class="pay"><div class="pt">' + esc(PAY_TITLE) + '</div>' +
-      '<div class="pm">' + PAY.map(function (p) { return '<span>' + esc(p) + '</span>'; }).join('') + '</div></div>';
+      '<div class="pm">' + PAY.map(function (p) { return '<span data-logo="' + p[1] + '">' + esc(p[0]) + '</span>'; }).join('') + '</div></div>';
+    swapLogos(el);
     return el;
+  }
+
+  // Replace a method's name with its logo when the file exists on the server.
+  var logos = null;
+  function swapLogos(el) {
+    if (!logos) logos = fetch(BASE + '/social-proof/pay.json').then(function (r) { return r.json(); }).then(function (d) { return d.files || []; }).catch(function () { return []; });
+    logos.then(function (files) {
+      var spans = el.querySelectorAll('.pm span[data-logo]');
+      for (var i = 0; i < spans.length; i++) {
+        var key = spans[i].getAttribute('data-logo');
+        var f = files.filter(function (x) { return x.replace(/\.[^.]+$/, '') === key; })[0];
+        if (!f) continue;
+        var label = spans[i].textContent;
+        spans[i].classList.add('lg');
+        spans[i].innerHTML = '<img src="' + BASE + '/social-proof/pay/' + f + '" alt="' + esc(label) + '" title="' + esc(label) + '">';
+      }
+    });
   }
 
   // Under the purchase area of Ecwid's product page (first selector that exists).

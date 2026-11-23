@@ -127,6 +127,15 @@ socialProofRouter.get('/photos.json', cors, (_req, res) => {
   res.json({ photos });
 });
 
+// Payment-method logos for the product-page trust block (official files the
+// store got from each provider, dropped in public/pay/<name>.svg|png).
+socialProofRouter.use('/pay', cors, express.static(path.join(__dirname, '..', 'public', 'pay'), { maxAge: '7d', fallthrough: false }));
+socialProofRouter.get('/pay.json', cors, (_req, res) => {
+  let files = [];
+  try { files = fs.readdirSync(path.join(__dirname, '..', 'public', 'pay')).filter((f) => /\.(svg|png|webp|jpe?g)$/i.test(f)); } catch { /* none yet */ }
+  res.set('Cache-Control', 'public, max-age=300').json({ files });
+});
+
 socialProofRouter.get('/img/:file', cors, (req, res) => {
   const file = path.basename(req.params.file); // no path traversal
   const full = path.join(IMG_DIR, file);
