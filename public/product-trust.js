@@ -52,7 +52,7 @@
     st.textContent =
       // Reset whatever the store theme puts on divs/spans inside the product column.
       '.k499-trust,.k499-trust *{box-sizing:border-box;margin:0;padding:0;line-height:1.5;letter-spacing:normal;text-transform:none;font-family:' + FONT + '}' +
-      '.k499-trust{direction:rtl;text-align:right;color:' + INK + ';margin:28px 0 40px;clear:both;display:flex;flex-direction:column;gap:16px}' +
+      '.k499-trust{direction:rtl;text-align:right;color:' + INK + ';margin:28px 0 0;padding-bottom:36px;clear:both;display:flex;flex-direction:column;gap:16px}' +
       // Delivery: one bordered box, two rows.
       R + '.dl{border:1px solid ' + LINE + ';border-radius:4px}' +
       R + '.row{display:flex;align-items:center;gap:14px;padding:16px 18px}' +
@@ -102,8 +102,9 @@
         css();
         var el = build();
         // Same width as the Add to Bag button, so the column lines up.
-        var btn = a.querySelector('button, .form-control__button');
-        var w = btn && btn.getBoundingClientRect().width;
+        var w = 0;
+        var btns = a.querySelectorAll('button, .form-control__button');
+        for (var j = 0; j < btns.length; j++) w = Math.max(w, btns[j].getBoundingClientRect().width);
         if (w > 200) el.style.maxWidth = Math.round(w) + 'px';
         a.parentNode.insertBefore(el, a.nextSibling);
         return true;
