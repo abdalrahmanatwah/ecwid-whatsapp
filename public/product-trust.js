@@ -52,7 +52,7 @@
     st.textContent =
       // Reset whatever the store theme puts on divs/spans inside the product column.
       '.k499-trust,.k499-trust *{box-sizing:border-box;margin:0;padding:0;line-height:1.5;letter-spacing:normal;text-transform:none;font-family:' + FONT + '}' +
-      '.k499-trust{direction:rtl;text-align:right;color:' + INK + ';margin:28px 0 0;padding-bottom:36px;clear:both;display:flex;flex-direction:column;gap:16px}' +
+      '.k499-trust{direction:rtl;text-align:right;color:' + INK + ';margin:28px 0 36px!important;padding:0!important;container-type:inline-size;clear:both;display:flex;flex-direction:column;gap:16px}' +
       // Delivery: one bordered box, two rows.
       R + '.dl{border:1px solid ' + LINE + ';border-radius:4px}' +
       R + '.row{display:flex;align-items:center;gap:14px;padding:16px 18px}' +
@@ -73,6 +73,8 @@
       R + '.pt:before,' + R + '.pt:after{content:"";flex:1;height:1px;background:' + LINE + '}' +
       R + '.pm{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-top:12px}' +
       R + '.pm span{display:inline-block;border:1px solid ' + LINE + ';border-radius:3px;padding:5px 11px;font-size:12.5px;font-weight:500;color:#3a3a3a;white-space:nowrap;background:#fff}' +
+      // Narrow product column (the theme's sidebar is ~300px): icon above the label.
+      '@container (max-width:380px){' + R + '.bd div{flex-direction:column;gap:6px;padding:14px 6px;font-size:13px}' + R + '.row{padding:14px}' + R + '.tt{font-size:14px}}' +
       '@media (max-width:420px){' + R + '.bd div{font-size:13px;gap:7px;padding:14px 6px}' + R + '.row{padding:14px}}';
     document.head.appendChild(st);
   }
