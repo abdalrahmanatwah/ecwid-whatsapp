@@ -10,8 +10,8 @@
   // ---- Copy -----------------------------------------------------------------
   var DELIVERY = [
     // [icon, title, detail]
-    ['bolt', 'توصيل في نفس اليوم', 'القاهرة والجيزة'],
-    ['truck', 'باقي المحافظات خلال 2 – 7 أيام', 'المندوب هيكلمك قبل التوصيل'],
+    ['bolt', 'متاح التوصيل في نفس اليوم', 'في القاهرة والجيزة'],
+    ['truck', 'التوصيل لكل المحافظات خلال 2 – 5 أيام', 'المندوب هيكلمك قبل التوصيل'],
   ];
   var BADGES = [
     ['shield', 'ضمان الجودة'],
@@ -55,7 +55,7 @@
       '.k499-trust{direction:rtl;text-align:right;color:' + INK + ';margin:28px 0 36px!important;padding:0!important;container-type:inline-size;clear:both;display:flex;flex-direction:column;gap:16px}' +
       // Delivery: one bordered box, two rows.
       R + '.dl{border:1px solid ' + LINE + ';border-radius:4px}' +
-      R + '.row{display:flex;align-items:center;gap:14px;padding:16px 18px}' +
+      R + '.row{display:flex;align-items:center;justify-content:center;gap:14px;padding:16px 18px;text-align:center}' +
       R + '.row+.row{border-top:1px solid ' + LINE + '}' +
       R + '.ic{flex:none;width:38px;height:38px;border-radius:4px;display:flex;align-items:center;justify-content:center;background:' + SOFT + ';color:' + INK + '}' +
       R + '.row.hot .ic{background:' + INK + ';color:#fff}' +
@@ -85,7 +85,7 @@
     el.innerHTML =
       '<div class="dl">' + DELIVERY.map(function (d, i) {
         return '<div class="row' + (i === 0 ? ' hot' : '') + '"><span class="ic">' + icon(d[0], 20) + '</span>' +
-          '<span><span class="tt">' + esc(d[1]) + '</span><span class="dd">' + esc(d[2]) + '</span></span></div>';
+          '<span><span class="tt">' + esc(d[1]) + '</span> <span class="dd">' + esc(d[2]) + '</span></span></div>';
       }).join('') + '</div>' +
       '<div class="bd">' + BADGES.map(function (b) { return '<div>' + icon(b[0], 20) + '<span>' + esc(b[1]) + '</span></div>'; }).join('') + '</div>' +
       '<div class="pay"><div class="pt">' + esc(PAY_TITLE) + '</div>' +
@@ -104,16 +104,34 @@
         css();
         var el = build();
         // Same width as the Add to Bag button, so the column lines up.
-        var w = 0;
-        var btns = a.querySelectorAll('button, .form-control__button');
-        for (var j = 0; j < btns.length; j++) w = Math.max(w, btns[j].getBoundingClientRect().width);
-        if (w > 200) el.style.maxWidth = Math.round(w) + 'px';
         a.parentNode.insertBefore(el, a.nextSibling);
+        matchButtonWidth(a, el);
         return true;
       }
     }
     return false;
   }
+  // Keep the block exactly as wide as the Add to Bag button, also when the
+  // layout changes (phone ↔ desktop, rotating, the theme finishing its layout).
+  var sizer = null;
+  function widest(a) {
+    var w = 0, btns = a.querySelectorAll('button, .form-control__button');
+    for (var j = 0; j < btns.length; j++) w = Math.max(w, btns[j].getBoundingClientRect().width);
+    return w;
+  }
+  function matchButtonWidth(a, el) {
+    function apply() { var w = widest(a); el.style.maxWidth = w > 160 ? Math.round(w) + 'px' : ''; }
+    apply();
+    if (sizer) sizer.disconnect();
+    if (window.ResizeObserver) {
+      sizer = new ResizeObserver(apply);
+      var b = a.querySelector('.form-control__button') || a.querySelector('button');
+      if (b) sizer.observe(b);
+      sizer.observe(a);
+    }
+    window.addEventListener('resize', apply);
+  }
+
   function clear() { var x = document.querySelector('.k499-trust'); if (x) x.remove(); }
 
   // Ecwid re-renders parts of the page (size picked, etc.) and can drop the
