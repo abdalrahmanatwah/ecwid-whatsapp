@@ -72,7 +72,7 @@ app.get('/', (_req, res) => res.send('Ecwid → WhatsApp order confirmation: run
 app.use('/dashboard/sheet-sync', requireAuth, sheetSyncRouter);
 // Are Bosta deliveries marked Delivered on Ecwid? ?days=21, &fix=1 to mark them.
 app.get('/dashboard/meta/ad-post', requireAuth, async (req, res) => {
-  try { res.json(req.query.raw ? await adCreativeRaw(String(req.query.id || '')) : req.query.name ? await adPostsByName(req.query.name) : await adPost(String(req.query.id || ''))); }
+  try { res.json(req.query.raw ? await adCreativeRaw(String(req.query.id || '')) : (req.query.name || req.query.campaign) ? await adPostsByName(req.query.name, req.query.campaign) : await adPost(String(req.query.id || ''))); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 app.get('/dashboard/bosta-ecwid/check', requireAuth, async (req, res) => {
