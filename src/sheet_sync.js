@@ -843,6 +843,35 @@ sheetSyncRouter.get('/status', (_req, res) => {
   });
 });
 
+// Read-only audit: every Bosta / QP delivery the carriers report for a month,
+// and whether it is in the sheet (month tabs column Q, review tab column G).
+// /dashboard/sheet-sync/audit?month=2026-11
+sheetSyncRouter.get('/audit', async (req, res) => {
+  try {
+    const month = /^\d{4}-\d{2}$/.test(req.query.month || '') ? req.query.month : monthKey(new Date().toISOString().slice(0, 10));
+    const state = loadState();
+    const priceTable = await readPriceTable();
+    const g = await gatherOrders(state);
+    const tabs = await sheets.getTabs(SHEET_ID);
+    const known = tabs.some((t) => t.title === REVIEW_TAB) ? await existingIds(REVIEW_TAB, 'G') : new Set();
+    for (const t of monthTabsOf(tabs)) for (const id of await existingIds(t.tab.title, 'Q')) known.add(id);
+    const rows = [];
+    const tally = {};
+    for (const n of g.orders) {
+      const c = classify(n, priceTable);
+      const date = c.date || n.deliveredDate || null;
+      if (!date || monthKey(date) !== month) continue;
+      tally[`${n.carrier}:${c.action}`] = (tally[`${n.carrier}:${c.action}`] || 0) + 1;
+      if (c.action !== 'sale' && c.action !== 'review') continue;
+      rows.push({ id: c.id || n.id, carrier: n.carrier, action: c.action, date, amount: n.amount, name: String(c.name || n.description || '').slice(0, 60), inSheet: known.has(c.id || n.id), processed: Boolean(state.processed[c.id || n.id]) });
+    }
+    const missing = rows.filter((r) => !r.inSheet);
+    res.json({ month, bostaSource: g.bostaSource, bostaComplete: g.bostaComplete, qpFresh: g.qpFresh, qpLastSeen: g.qpLastSeen, lookbackDays: BOSTA_LOOKBACK_DAYS, tally, deliveredSalesOrReview: rows.length, missingCount: missing.length, missing, sheetIds: known.size });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Run now. ?dry=1 shows what would be written without touching the sheet.
 sheetSyncRouter.get('/run', async (req, res) => {
   try {
