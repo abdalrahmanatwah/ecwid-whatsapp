@@ -116,9 +116,23 @@ socialProofRouter.get('/widget.js', cors, (req, res) => {
   const header = fs.readFileSync(path.join(__dirname, '..', 'public', 'site-header.js'), 'utf8');
   // …and the trust block (delivery, promises, ways to pay) on product pages.
   const trust = fs.readFileSync(path.join(__dirname, '..', 'public', 'product-trust.js'), 'utf8');
+  // …and the home page "all products" section + the seasonal theme.
+  // Preview gates: while set, the feature shows only with ?<gate> in the URL.
+  const allGate = process.env.ALL_PRODUCTS_GATE ?? 'k499preview';
+  const themeGate = process.env.STORE_THEME_GATE ?? 'k499preview';
+  const allProducts = fs.readFileSync(path.join(__dirname, '..', 'public', 'all-products.js'), 'utf8').replace("'__GATE__'", JSON.stringify(allGate));
+  const theme = String(process.env.STORE_THEME || 'black-friday') === 'black-friday'
+    ? fs.readFileSync(path.join(__dirname, '..', 'public', 'theme-black-friday.js'), 'utf8').replace("'__GATE__'", JSON.stringify(themeGate)) : '';
   res.type('application/javascript');
   res.set('Cache-Control', 'public, max-age=300');
-  res.send(src + '\n' + wa + '\n' + party + '\n' + header + '\n' + trust);
+  res.send(src + '\n' + wa + '\n' + party + '\n' + header + '\n' + trust + '\n' + allProducts + '\n' + theme);
+});
+
+socialProofRouter.get('/products.json', cors, async (_req, res) => {
+  try {
+    const { storefrontProducts } = await import('./ecwid.js');
+    res.set('Cache-Control', 'public, max-age=300').json({ products: await storefrontProducts() });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 socialProofRouter.get('/photos.json', cors, (_req, res) => {

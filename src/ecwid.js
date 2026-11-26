@@ -178,3 +178,25 @@ export async function listProductPrices() {
   }
   return out;
 }
+
+// Storefront list: every enabled, in-stock product, for the home page "all
+// products" section. Cached for 10 minutes.
+let storefrontCache = { at: 0, items: null };
+export async function storefrontProducts() {
+  if (storefrontCache.items && Date.now() - storefrontCache.at < 10 * 60_000) return storefrontCache.items;
+  const out = [];
+  for (let offset = 0; offset < 3000; offset += 100) {
+    const res = await fetch(`${BASE}/products?enabled=true&inStock=true&limit=100&offset=${offset}&sortBy=ADDED_TIME_DESC&responseFields=total,count,items(id,name,url,price,compareToPrice,hdThumbnailUrl,thumbnailUrl,imageUrl,ribbon,galleryImages(url,hdThumbnailUrl),inStock,enabled)`, { headers: authHeaders() });
+    if (!res.ok) throw new Error(`Ecwid products failed: ${res.status}`);
+    const j = await res.json();
+    for (const p of j.items || []) {
+      if (!p.enabled || p.inStock === false) continue;
+      const g = (p.galleryImages || [])[0];
+      out.push({ id: p.id, name: p.name, url: p.url, price: p.price, old: p.compareToPrice > p.price ? p.compareToPrice : null,
+        img: p.hdThumbnailUrl || p.imageUrl || p.thumbnailUrl || '', img2: g ? (g.hdThumbnailUrl || g.url) : '', ribbon: p.ribbon?.text || '' });
+    }
+    if (offset + (j.count || 0) >= (j.total || 0) || !j.count) break;
+  }
+  storefrontCache = { at: Date.now(), items: out };
+  return out;
+}
