@@ -14,6 +14,23 @@
 
   if (GATE && !(location.search.indexOf(GATE) >= 0)) return;
 
+  // Brand order asked by the owner; anything else after, newest first inside each.
+  var BRANDS = [
+    ['adidas', /adidas|adizero|hyperboost|hyper boost|ubersonic|soul stride|adistar|easy star|terrex|dropset|\bedge\b/i],
+    ['asics', /asics|gel[- ]|novablast|superblast|super blast|kinsei|court ff/i],
+    ['nike', /nike|jordan|vomero|vaporfly|pegasus|air max|dunk/i],
+    ['on', /^\s*on\b|\bon cloud|\bcloud\w*|the roger|\bon running/i],
+  ];
+  function brandRank(name) {
+    for (var i = 0; i < BRANDS.length; i++) if (BRANDS[i][1].test(name || '')) return i;
+    return BRANDS.length;
+  }
+  function sortByBrand(items) {
+    return items.map(function (p, i) { return { p: p, i: i, r: brandRank(p.name) }; })
+      .sort(function (a, b) { return a.r - b.r || a.i - b.i; })
+      .map(function (x) { return x.p; });
+  }
+
   function isHome() { return location.pathname === '/' || location.pathname === ''; }
   function money(n) {
     return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + 'EGP';
@@ -79,6 +96,14 @@
     box.appendChild(frag);
     // Ecwid animates sections in on scroll; show this one right away.
     sec.querySelectorAll('.section__animation').forEach(function (e) { e.style.opacity = '1'; e.style.transform = 'none'; });
+    if (!document.getElementById('k499-all-fit')) {
+      var st = document.createElement('style');
+      st.id = 'k499-all-fit';
+      // Photos fill the whole square (no grey bars), like a cropped cover.
+      st.textContent = '#' + ID + ' .ins-tile__image img,#' + ID + ' .ins-tile__image picture{width:100% !important;height:100% !important;object-fit:cover !important;}'
+        + '#' + ID + ' .ins-tile__product-image > div,#' + ID + ' .ins-tile__image{background:#fff !important;}';
+      document.head.appendChild(st);
+    }
     last.parentNode.insertBefore(sec, last.nextSibling);
     return true;
   }
@@ -88,7 +113,7 @@
     fetch(BASE + '/social-proof/products.json')
       .then(function (r) { return r.json(); })
       .then(function (j) {
-        var items = (j && j.products) || [];
+        var items = sortByBrand((j && j.products) || []);
         if (!items.length) return;
         var tries = 0;
         (function attempt() {
