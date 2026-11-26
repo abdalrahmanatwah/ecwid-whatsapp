@@ -21,8 +21,8 @@
     '.ins-tile__product-label--ribbon,.grid-product__label .label__text,.product-details__label .label__text{background:' + BLACK + ' !important;color:#fff !important;}',
     '.ins-tile__product-label--ribbon *,.grid-product__label .label__text *{color:#fff !important;}',
     // Product page
-    '.details-product-price__value,.product-details__product-price .details-product-price__value{color:' + RED + ' !important;}',
-    '.details-product-purchase__add-to-bag .form-control__button,.details-product-purchase__add-buttons .form-control--primary .form-control__button{background:' + RED + ' !important;border-color:' + RED + ' !important;color:#fff !important;}',
+    '.details-product-price__value,.product-details__product-price .details-product-price__value{color:' + BLACK + ' !important;}',
+    '.details-product-purchase__add-to-bag .form-control__button,.details-product-purchase__add-buttons .form-control--primary .form-control__button{background:' + BLACK + ' !important;border-color:' + BLACK + ' !important;color:#fff !important;}',
     '.details-product-purchase__add-to-bag .form-control__button *{color:#fff !important;}',
     // Cart / checkout main button
     '.ec-cart__button--checkout .form-control__button,.ec-cart .form-control--primary .form-control__button{background:' + RED + ' !important;border-color:' + RED + ' !important;color:#fff !important;}',
