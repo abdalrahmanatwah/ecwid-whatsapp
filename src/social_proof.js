@@ -118,8 +118,8 @@ socialProofRouter.get('/widget.js', cors, (req, res) => {
   const trust = fs.readFileSync(path.join(__dirname, '..', 'public', 'product-trust.js'), 'utf8');
   // …and the home page "all products" section + the seasonal theme.
   // Preview gates: while set, the feature shows only with ?<gate> in the URL.
-  const allGate = process.env.ALL_PRODUCTS_GATE ?? 'k499preview';
-  const themeGate = process.env.STORE_THEME_GATE ?? 'k499preview';
+  const allGate = process.env.ALL_PRODUCTS_GATE ?? '';
+  const themeGate = process.env.STORE_THEME_GATE ?? '';
   const allProducts = fs.readFileSync(path.join(__dirname, '..', 'public', 'all-products.js'), 'utf8').replace("'__GATE__'", JSON.stringify(allGate));
   const theme = String(process.env.STORE_THEME || 'black-friday') === 'black-friday'
     ? fs.readFileSync(path.join(__dirname, '..', 'public', 'theme-black-friday.js'), 'utf8').replace("'__GATE__'", JSON.stringify(themeGate)) : '';
