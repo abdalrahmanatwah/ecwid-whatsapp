@@ -8,7 +8,7 @@
   window.__k499All = true;
 
   var BASE = 'https://ecwid-whatsapp.onrender.com';
-  var TITLE = 'كل المنتجات';
+  var TITLE = 'Black Friday Offers 🔥🔥🔥';
   var ID = 'tile-k499-all-products';
   var GATE = '__GATE__'; // replaced by the server: '' = live for everyone
 
@@ -71,7 +71,7 @@
     // The section's own <style> targets its id: point it at the copy.
     sec.querySelectorAll('style').forEach(function (st) { st.textContent = st.textContent.split(oldId).join(ID); });
     var h = sec.querySelector('.ins-tile__title');
-    if (h) h.textContent = TITLE + ' (' + products.length + ')';
+    if (h) h.textContent = TITLE;
     var box = sec.querySelector('.ins-tile__products');
     while (box.firstChild) box.removeChild(box.firstChild);
     var frag = document.createDocumentFragment();
