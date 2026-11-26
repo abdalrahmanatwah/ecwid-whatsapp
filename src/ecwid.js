@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 // Thin wrapper around the Ecwid REST API for the two calls we need:
 // fetching an order's details, and updating its status.
 
@@ -180,6 +181,16 @@ export async function listProductPrices() {
   return out;
 }
 
+function latestSnapshotPrices() {
+  try {
+    const dir = process.env.PRICE_SNAPSHOT_DIR || '/var/data/price_snapshots';
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
+    if (!files.length) return {};
+    const list = JSON.parse(fs.readFileSync(`${dir}/${files[files.length - 1]}`, 'utf8'));
+    return Object.fromEntries(list.map((p) => [p.id, p.price]));
+  } catch { return {}; }
+}
+
 // Storefront list: every enabled, in-stock product, for the home page "all
 // products" section. Cached for 10 minutes.
 let storefrontCache = { at: 0, items: null };
@@ -198,6 +209,11 @@ export async function storefrontProducts() {
     }
     if (offset + (j.count || 0) >= (j.total || 0) || !j.count) break;
   }
+  // Products cheaper now than in the latest saved price snapshot (taken before
+  // an offer) are the ones on offer: they go first, newest first; then the rest.
+  const before = latestSnapshotPrices();
+  for (const p of out) p.offer = before[p.id] != null && Number(p.price) < Number(before[p.id]);
+  out.sort((a, b) => Number(b.offer) - Number(a.offer));
   storefrontCache = { at: Date.now(), items: out };
   return out;
 }
