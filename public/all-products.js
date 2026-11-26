@@ -101,7 +101,7 @@
       st.id = 'k499-all-fit';
       // Photos fill the whole square (no grey bars), like a cropped cover.
       st.textContent = '#' + ID + ' .ins-tile__image img,#' + ID + ' .ins-tile__image picture{width:100% !important;height:100% !important;object-fit:cover !important;}'
-        + '#' + ID + ' .ins-tile__product-image > div,#' + ID + ' .ins-tile__image{background:#fff !important;}';
+        + '#' + ID + ' .ins-tile__product-image > div:not(.ins-tile__product-label),#' + ID + ' .ins-tile__image{background:#fff !important;}';
       document.head.appendChild(st);
     }
     last.parentNode.insertBefore(sec, last.nextSibling);
