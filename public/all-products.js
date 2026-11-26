@@ -129,7 +129,7 @@
     fetch(BASE + '/social-proof/products.json')
       .then(function (r) { return r.json(); })
       .then(function (j) {
-        var items = (j && j.products) || []; // newest added first (server order)
+        var items = (j && j.products) || []; // offers first, then the rest; newest first in each (server order)
         if (!items.length) return;
         var tries = 0;
         (function attempt() {
