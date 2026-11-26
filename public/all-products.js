@@ -2,7 +2,7 @@
  * "category products" section stops at 20). Self-contained markup and CSS in
  * the store's card style, so it works even when the Ecwid product sections are
  * hidden. Data: /social-proof/products.json (enabled + in stock, newest first),
- * shown by brand: Adidas, ASICS, Nike, On, then the rest. */
+ * newest added first. (sortByBrand below is kept for later use.) */
 (function () {
   'use strict';
   if (window.__k499All) return;
@@ -129,7 +129,7 @@
     fetch(BASE + '/social-proof/products.json')
       .then(function (r) { return r.json(); })
       .then(function (j) {
-        var items = sortByBrand((j && j.products) || []);
+        var items = (j && j.products) || []; // newest added first (server order)
         if (!items.length) return;
         var tries = 0;
         (function attempt() {
