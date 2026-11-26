@@ -166,13 +166,13 @@ export function extractOrderInfo(order) {
 export async function listProductPrices() {
   const out = [];
   for (let offset = 0; offset < 2000; offset += 100) {
-    const res = await fetch(`${BASE}/products?limit=100&offset=${offset}&responseFields=total,count,items(id,name,price,compareToPrice,quantity,unlimited,inStock,enabled,updated,combinations(quantity,inStock))`, { headers: authHeaders() });
+    const res = await fetch(`${BASE}/products?limit=100&offset=${offset}&responseFields=total,count,items(id,name,price,compareToPrice,quantity,unlimited,inStock,enabled,updated,categoryIds,combinations(quantity,inStock))`, { headers: authHeaders() });
     if (!res.ok) throw new Error(`Ecwid products failed: ${res.status}`);
     const j = await res.json();
     for (const p of j.items || []) {
       const combos = p.combinations || [];
       const stock = combos.length ? combos.reduce((s, c) => s + (Number(c.quantity) || 0), 0) : (p.unlimited ? null : p.quantity ?? null);
-      out.push({ id: p.id, name: p.name, price: p.price, oldPrice: p.compareToPrice || null, stock, enabled: p.enabled, updated: p.updated });
+      out.push({ id: p.id, name: p.name, price: p.price, oldPrice: p.compareToPrice || null, stock, enabled: p.enabled, inStock: p.inStock, updated: p.updated, cats: p.categoryIds || [] });
     }
     if (offset + (j.count || 0) >= (j.total || 0) || !j.count) break;
   }
@@ -199,4 +199,11 @@ export async function storefrontProducts() {
   }
   storefrontCache = { at: Date.now(), items: out };
   return out;
+}
+
+// Read-only: categories (id, name, parent).
+export async function listCategories() {
+  const res = await fetch(`${BASE}/categories?limit=100&responseFields=items(id,name,parentId,enabled)`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`Ecwid categories failed: ${res.status}`);
+  return (await res.json()).items || [];
 }
