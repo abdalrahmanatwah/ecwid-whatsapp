@@ -18,8 +18,8 @@
     // Product cards (home sections + store grid)
     '.ins-tile__product-current-price{color:#fff !important;font-weight:700 !important;}',
     '.ins-tile__product-compare-price,.grid-product__price-compare{color:#8a8a8a !important;text-decoration:line-through !important;}',
-    '.ins-tile__product-label--ribbon,.grid-product__label .label__text,.product-details__label .label__text{background:' + RED + ' !important;color:#fff !important;}',
-    '.ins-tile__product-label--ribbon span{color:#fff !important;}',
+    '.ins-tile__product-label--ribbon,.grid-product__label .label__text,.product-details__label .label__text{background:' + BLACK + ' !important;color:#fff !important;}',
+    '.ins-tile__product-label--ribbon *,.grid-product__label .label__text *{color:#fff !important;}',
     // Product page
     '.details-product-price__value,.product-details__product-price .details-product-price__value{color:' + RED + ' !important;}',
     '.details-product-purchase__add-to-bag .form-control__button,.details-product-purchase__add-buttons .form-control--primary .form-control__button{background:' + RED + ' !important;border-color:' + RED + ' !important;color:#fff !important;}',
