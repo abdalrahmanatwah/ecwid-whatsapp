@@ -83,6 +83,10 @@ app.get('/dashboard/ecwid/prices', requireAuth, async (_req, res) => {
   try { const { listProductPrices } = await import('./ecwid.js'); res.json(await listProductPrices()); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
+app.get('/dashboard/meta/report', requireAuth, async (_req, res) => {
+  try { const { adsReport } = await import('./ads_report.js'); res.json(await adsReport()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.get('/dashboard/meta/ad-post', requireAuth, async (req, res) => {
   try { res.json(req.query.raw ? await adCreativeRaw(String(req.query.id || '')) : (req.query.name || req.query.campaign) ? await adPostsByName(req.query.name, req.query.campaign) : await adPost(String(req.query.id || ''))); }
   catch (e) { res.status(500).json({ error: e.message }); }
