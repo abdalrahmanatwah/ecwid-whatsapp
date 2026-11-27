@@ -239,6 +239,21 @@ function cleanItemName(text) {
   return text.replace(/\s*[\/,]?\s*(\d+\s*)?(comfort foam insoles?|فرش).*$/i, '').trim() || text;
 } // below this per pair, not every listed pair was paid for
 
+// Supplier deals for offer days: a pair of this brand sold at or under
+// maxPrice, delivered between from and to, costs `price` instead of the usual
+// wholesale. Override with SHEET_OFFER_COSTS (JSON list).
+// 27/11/2026 Black Friday: ASICS at 2,000 for the pairs sold at the offer price.
+const OFFER_COSTS = (() => {
+  try { return JSON.parse(process.env.SHEET_OFFER_COSTS || ''); } catch { /* default below */ }
+  return [{ brand: 'ASICS', models: ['court ff', 'resolution'], maxPrice: 3099, price: 2000, from: '2026-11-27', to: '2026-12-15' }];
+})();
+export function offerRule(brand, perPairPrice, date, text = '', rules = OFFER_COSTS) {
+  if (!date) return null;
+  const t = String(text).toLowerCase();
+  return rules.find((r) => r.brand === brand && perPairPrice > 0 && perPairPrice <= r.maxPrice && date >= r.from && date <= r.to
+    && (!r.models || r.models.some((m) => t.includes(m)))) || null;
+}
+
 function reviewOrSale(n, priceTable) {
   const date = n.deliveredDate;
   const base = { id: n.id, carrier: n.carrier, date, amount: n.amount, fee: n.fee, description: n.description };
@@ -269,9 +284,15 @@ function reviewOrSale(n, priceTable) {
   const pairs = Object.fromEntries(BRANDS.map((b) => [b, 0]));
   const costs = [];
   const newModels = [];
+  // Price each pair would have sold at (insoles taken out), for offer rules.
+  const insoleRevenue = insoles >= 2 ? 600 : insoles === 1 ? 350 : 0;
+  const perPair = (n.amount - insoleRevenue) / shoes.length;
+  let offerCost = false;
   for (const s of shoes) {
     pairs[s.brand]++;
     const hit = lookupModelPrice(withModelName(s.text), priceTable);
+    const offer = offerRule(s.brand, perPair, date, s.text);
+    if (offer) { costs.push({ price: offer.price }); offerCost = true; continue; }
     costs.push(hit ? { price: hit.price } : { brand: s.brand });
     if (!hit) newModels.push(s.text);
   }
@@ -280,6 +301,7 @@ function reviewOrSale(n, priceTable) {
   if (n.carrier === 'bosta' && !(n.fee > 0)) notes.push('شحن تقديري');
   if (newModels.length) notes.push('الجملة من الافتراضات (موديل جديد)');
   if (partial) notes.push('اتبعت أكتر من زوج والمحصّل زوج واحد — محسوب زوج');
+  if (offerCost) notes.push('جملة العرض (اتفاق المورد)');
 
   return {
     action: 'sale',
