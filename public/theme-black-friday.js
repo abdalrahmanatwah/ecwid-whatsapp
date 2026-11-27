@@ -28,6 +28,8 @@
     // "Go to Checkout" (shown once the shoe is in the bag): black box, white text
     '.details-product-purchase__checkout .form-control__button,.details-product-purchase__controls .form-control--primary .form-control__button{background:' + BLACK + ' !important;border-color:' + BLACK + ' !important;color:#fff !important;}',
     '.details-product-purchase__checkout .form-control__button *,.details-product-purchase__controls .form-control--primary .form-control__button *{color:#fff !important;filter:none !important;-webkit-text-fill-color:#fff !important;}',
+    // Strong selectors so Ecwid's own !important text filter can't win.
+    'html body .ec-size .ec-store .form-control--primary .form-control__button .form-control__button-text,html body .ec-size .ec-store .form-control--primary .form-control__button .form-control__button-svg,html body .ec-store .details-product-purchase__add-to-bag .form-control__button .form-control__button-text{filter:none !important;color:#fff !important;-webkit-text-fill-color:#fff !important;}',
     // Cart / checkout main button
     '.ec-cart__button--checkout .form-control__button,.ec-cart .form-control--primary .form-control__button{background:' + RED + ' !important;border-color:' + RED + ' !important;color:#fff !important;}',
     '.ec-cart__button--checkout .form-control__button *,.ec-cart .form-control--primary .form-control__button *{color:#fff !important;filter:none !important;-webkit-text-fill-color:#fff !important;}',
