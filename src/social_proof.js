@@ -121,7 +121,7 @@ socialProofRouter.get('/widget.js', cors, (req, res) => {
   const allGate = process.env.ALL_PRODUCTS_GATE ?? '';
   const themeGate = process.env.STORE_THEME_GATE ?? '';
   const allProducts = fs.readFileSync(path.join(__dirname, '..', 'public', 'all-products.js'), 'utf8').replace("'__GATE__'", JSON.stringify(allGate));
-  const theme = String(process.env.STORE_THEME || 'black-friday') === 'black-friday'
+  const theme = String(process.env.STORE_THEME || 'normal') === 'black-friday'
     ? fs.readFileSync(path.join(__dirname, '..', 'public', 'theme-black-friday.js'), 'utf8').replace("'__GATE__'", JSON.stringify(themeGate)) : '';
   res.type('application/javascript');
   res.set('Cache-Control', 'public, max-age=300');
