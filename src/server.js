@@ -83,6 +83,10 @@ app.get('/dashboard/ecwid/prices', requireAuth, async (_req, res) => {
   try { const { listProductPrices } = await import('./ecwid.js'); res.json(await listProductPrices()); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
+app.get('/dashboard/ecwid/orders-of-day', requireAuth, async (req, res) => {
+  try { const { ordersOfDay } = await import('./ads_report.js'); res.json(await ordersOfDay(String(req.query.day || new Date().toLocaleDateString('sv-SE', { timeZone: 'Africa/Cairo' })))); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
 app.get('/dashboard/meta/report', requireAuth, async (_req, res) => {
   try { const { adsReport } = await import('./ads_report.js'); res.json(await adsReport()); }
   catch (e) { res.status(500).json({ error: e.message }); }
