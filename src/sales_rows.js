@@ -245,7 +245,7 @@ function cleanItemName(text) {
 // 27/11/2026 Black Friday: ASICS at 2,000 for the pairs sold at the offer price.
 const OFFER_COSTS = (() => {
   try { return JSON.parse(process.env.SHEET_OFFER_COSTS || ''); } catch { /* default below */ }
-  return [{ brand: 'ASICS', models: ['court ff', 'resolution'], maxPrice: 3099, price: 2000, from: '2026-11-27', to: '2026-12-15' }];
+  return [{ brand: 'ASICS', models: ['court ff', 'resolution'], maxPrice: 3000, price: 2000, from: '2026-11-27', to: '2026-12-15' }];
 })();
 export function offerRule(brand, perPairPrice, date, text = '', rules = OFFER_COSTS) {
   if (!date) return null;
