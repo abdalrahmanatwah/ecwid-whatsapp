@@ -56,3 +56,13 @@ export async function adsReport() {
   }
   return { now: new Date().toLocaleString('sv-SE', { timeZone: 'Africa/Cairo' }), campaignsToday, adsToday: today, yesterday: yday[0] || null, last7: week, ecwidByDay: byDay };
 }
+
+// Read-only: orders placed on one Cairo day with their items (for margin checks).
+export async function ordersOfDay(day) {
+  const from = Math.floor(Date.now() / 1000) - 3 * 86400;
+  const all = await searchOrders(from);
+  return all.filter((o) => cairoDay(new Date((o.createTimestamp || 0) * 1000)) === day).map((o) => ({
+    id: o.id, total: o.total, shipping: o.shippingOptionInfo?.shippingRate ?? null, pay: o.paymentStatus, ful: o.fulfillmentStatus,
+    items: (o.items || []).map((i) => ({ name: i.name, price: i.price, qty: i.quantity, opts: (i.selectedOptions || []).map((x) => `${x.name}:${x.value}`).join(', ') })),
+  }));
+}
