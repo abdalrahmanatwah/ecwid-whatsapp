@@ -212,7 +212,9 @@ export async function storefrontProducts() {
   // Products cheaper now than in the latest saved price snapshot (taken before
   // an offer) are the ones on offer: they go first, newest first; then the rest.
   const before = latestSnapshotPrices();
-  for (const p of out) p.offer = before[p.id] != null && Number(p.price) < Number(before[p.id]);
+  // Products added after the snapshot count as on offer when they show a
+  // discount (old price above the price), so new arrivals on sale go on top too.
+  for (const p of out) p.offer = before[p.id] != null ? Number(p.price) < Number(before[p.id]) : Boolean(p.old && p.old > p.price);
   out.sort((a, b) => Number(b.offer) - Number(a.offer));
   storefrontCache = { at: Date.now(), items: out };
   return out;
